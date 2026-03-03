@@ -2,6 +2,15 @@
 🤖 Autonomous Data Analysis System
 A council of intelligent agents for autonomous data analysis, hypothesis generation, and visualization
 NO EXTERNAL AI MODELS - Pure intelligent rule-based system
+
+Architecture:
+- Multi-sheet Excel support with intelligent merging
+- Council of 7 specialized agents working as an internal pipeline
+- Auto data type detection (datetime, boolean, categorical, numeric)
+- Field generation with UI controls
+- Multi-iteration self-correction
+- Interactive visualization with manual chart override
+- KPI cards, correlation matrices, distribution analysis
 """
 
 import streamlit as st
@@ -11,7 +20,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import yfinance as yf
-from typing import List, Dict, Tuple, Optional
+import requests
+from typing import List, Dict, Tuple, Optional, Union
 import io
 import traceback
 from scipy import stats
@@ -19,6 +29,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import warnings
 warnings.filterwarnings('ignore')
+
+try:
+    import statsmodels
+    HAS_STATSMODELS = True
+except ImportError:
+    HAS_STATSMODELS = False
 
 # ============================================================================
 # LOGGING SYSTEM - Agent Thinking Transparency
@@ -51,19 +67,65 @@ class AgentLogger:
         st.session_state.agent_logs = []
 
 # ============================================================================
-# AGENT 1: DATA INGESTION AGENT
+# AGENT 1: DATA INGESTION AGENT (ENHANCED)
 # ============================================================================
 
 class DataIngestionAgent:
-    """Validates, cleans, and structures incoming data"""
+    """Validates, cleans, and structures incoming data with multi-sheet support"""
     
     def __init__(self, logger: AgentLogger):
         self.logger = logger
         self.issues_detected = []
         self.fixes_applied = []
+        self.sheets_detected = []
     
-    def ingest_csv(self, file) -> pd.DataFrame:
-        """Load and validate CSV/Excel file"""
+    def detect_and_load_sheets(self, file) -> Dict[str, pd.DataFrame]:
+        """Detect and load all sheets from Excel file"""
+        self.logger.log(
+            "Data Ingestion Agent",
+            "Analyzing Excel file for multiple sheets",
+            "Detecting sheet structure"
+        )
+        
+        sheets = {}
+        try:
+            if file.name.endswith(('.xlsx', '.xls')):
+                # Read all sheets
+                xl_file = pd.ExcelFile(file)
+                sheet_names = xl_file.sheet_names
+                
+                self.sheets_detected = sheet_names
+                self.logger.log(
+                    "Data Ingestion Agent",
+                    f"Found {len(sheet_names)} sheet(s): {sheet_names}",
+                    "Multi-sheet Excel file detected"
+                )
+                
+                for sheet_name in sheet_names:
+                    try:
+                        df = pd.read_excel(file, sheet_name=sheet_name)
+                        if len(df) > 0:
+                            sheets[sheet_name] = df
+                    except Exception as e:
+                        self.logger.log(
+                            "Data Ingestion Agent",
+                            f"Failed to read sheet '{sheet_name}': {str(e)}",
+                            "Skipping sheet"
+                        )
+                
+                return sheets
+            else:
+                return {}
+        except Exception as e:
+            self.logger.log(
+                "Data Ingestion Agent",
+                f"Error detecting sheets: {str(e)}",
+                "Attempting single sheet read"
+            )
+            return {}
+    
+    def ingest_csv(self, file) -> Union[pd.DataFrame, Dict[str, pd.DataFrame]]:
+        """Load and validate CSV/Excel file - supports multi-sheet Excel"""
         self.logger.log(
             "Data Ingestion Agent",
             "Starting data ingestion from uploaded file",
@@ -73,15 +135,32 @@ class DataIngestionAgent:
         try:
             if file.name.endswith('.csv'):
                 df = pd.read_csv(file)
+                self.logger.log(
+                    "Data Ingestion Agent",
+                    f"Successfully loaded CSV: {len(df)} rows and {len(df.columns)} columns",
+                    f"Columns: {list(df.columns)}"
+                )
+                return df
             else:
-                df = pd.read_excel(file)
-            
-            self.logger.log(
-                "Data Ingestion Agent",
-                f"Successfully loaded {len(df)} rows and {len(df.columns)} columns",
-                f"Columns: {list(df.columns)}"
-            )
-            return df
+                # Try to read as Excel with multi-sheet support
+                sheets_dict = self.detect_and_load_sheets(file)
+                
+                if sheets_dict:
+                    if len(sheets_dict) == 1:
+                        # Single sheet - return DataFrame directly
+                        return list(sheets_dict.values())[0]
+                    else:
+                        # Multiple sheets - return dictionary
+                        return sheets_dict
+                else:
+                    # Fallback to single sheet read
+                    df = pd.read_excel(file)
+                    self.logger.log(
+                        "Data Ingestion Agent",
+                        f"Successfully loaded Excel: {len(df)} rows and {len(df.columns)} columns",
+                        f"Columns: {list(df.columns)}"
+                    )
+                    return df
         except Exception as e:
             self.logger.log(
                 "Data Ingestion Agent",
@@ -89,6 +168,69 @@ class DataIngestionAgent:
                 "Failed to ingest data"
             )
             return None
+    
+    def merge_sheets(self, sheets_dict: Dict[str, pd.DataFrame], merge_strategy: str = 'concat') -> pd.DataFrame:
+        """Intelligently merge multiple sheets based on structure"""
+        self.logger.log(
+            "Data Ingestion Agent",
+            f"Merging {len(sheets_dict)} sheets using strategy: {merge_strategy}",
+            "Combining data from multiple sheets"
+        )
+        
+        if not sheets_dict:
+            return pd.DataFrame()
+        
+        sheets_list = list(sheets_dict.values())
+        sheet_names = list(sheets_dict.keys())
+        
+        if len(sheets_list) == 1:
+            return sheets_list[0]
+        
+        try:
+            if merge_strategy == 'concat':
+                # Concatenate all sheets vertically
+                merged_df = pd.concat(sheets_list, ignore_index=True)
+                self.logger.log(
+                    "Data Ingestion Agent",
+                    f"Concatenated sheets vertically: {len(merged_df)} total rows",
+                    f"Combined from sheets: {sheet_names}"
+                )
+            elif merge_strategy == 'merge_on_index':
+                # Merge on index (for aligned data)
+                merged_df = sheets_list[0].copy()
+                for df in sheets_list[1:]:
+                    merged_df = merged_df.merge(df, left_index=True, right_index=True, how='outer')
+                self.logger.log(
+                    "Data Ingestion Agent",
+                    f"Merged sheets on index: {len(merged_df)} rows",
+                    f"Merged from sheets: {sheet_names}"
+                )
+            else:
+                # Default: concat
+                merged_df = pd.concat(sheets_list, ignore_index=True)
+            
+            # Add sheet source column if merging multiple
+            if len(sheets_list) > 1 and merge_strategy == 'concat':
+                # Add indicator of which sheet each row came from
+                row_counts = [len(df) for df in sheets_list]
+                sheet_source = []
+                for sheet_name, count in zip(sheet_names, row_counts):
+                    sheet_source.extend([sheet_name] * count)
+                merged_df['_source_sheet'] = sheet_source
+                self.logger.log(
+                    "Data Ingestion Agent",
+                    "Added '_source_sheet' column to track origin",
+                    f"Sheet sources: {sheet_names}"
+                )
+            
+            return merged_df
+        except Exception as e:
+            self.logger.log(
+                "Data Ingestion Agent",
+                f"Error merging sheets: {str(e)}",
+                "Falling back to concatenation"
+            )
+            return pd.concat(sheets_list, ignore_index=True)
     
     def validate_data(self, df: pd.DataFrame) -> Dict:
         """Validate data quality and detect issues"""
@@ -110,9 +252,14 @@ class DataIngestionAgent:
         # Check missing values
         for col in df.columns:
             missing_count = df[col].isnull().sum()
+            missing_pct = (missing_count / len(df) * 100) if len(df) > 0 else 0
+            
             if missing_count > 0:
-                validation_report['missing_values'][col] = missing_count
-                self.issues_detected.append(f"⚠️ Missing values in '{col}' column ({missing_count} rows)")
+                validation_report['missing_values'][col] = {
+                    'count': missing_count,
+                    'percentage': missing_pct
+                }
+                self.issues_detected.append(f"⚠️ Missing values in '{col}': {missing_count} rows ({missing_pct:.1f}%)")
         
         # Check duplicates
         duplicate_count = df.duplicated().sum()
@@ -123,16 +270,19 @@ class DataIngestionAgent:
         # Data types
         validation_report['data_types'] = df.dtypes.to_dict()
         
-        # Column statistics
+        # Column statistics for numeric columns
         for col in df.columns:
             if pd.api.types.is_numeric_dtype(df[col]):
-                validation_report['column_stats'][col] = {
-                    'mean': df[col].mean(),
-                    'std': df[col].std(),
-                    'min': df[col].min(),
-                    'max': df[col].max(),
-                    'median': df[col].median()
-                }
+                try:
+                    validation_report['column_stats'][col] = {
+                        'mean': float(df[col].mean()) if df[col].notna().any() else None,
+                        'std': float(df[col].std()) if df[col].notna().any() else None,
+                        'min': float(df[col].min()) if df[col].notna().any() else None,
+                        'max': float(df[col].max()) if df[col].notna().any() else None,
+                        'median': float(df[col].median()) if df[col].notna().any() else None
+                    }
+                except:
+                    pass
         
         self.logger.log(
             "Data Ingestion Agent",
@@ -331,36 +481,86 @@ class SelfHealingAgent:
         
         return df
     
+    def _fix_data_types(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Intelligently detect and fix data types with self-correction"""
+        for col in df.columns:
+            # Skip special columns
+            if col.startswith('_'):
+                continue
+            
+            original_dtype = df[col].dtype
+            
+            # Skip if already numeric and has valid values
+            if pd.api.types.is_numeric_dtype(df[col]) and df[col].notna().any():
+                continue
+            
+            # Get sample of non-null values
+            sample_values = df[col].dropna().head(20).astype(str).tolist()
+            
+            if not sample_values:
+                continue
+            
+            # Try different type conversions with error handling
+            conversion_successful = False
+            
+            # 1. Try datetime conversion (HIGHEST PRIORITY)
+            if not conversion_successful:
+                conversion_successful = self._try_datetime_conversion(df, col, sample_values)
+            
+            # 2. Try boolean conversion
+            if not conversion_successful:
+                conversion_successful = self._try_boolean_conversion(df, col, sample_values)
+            
+            # 3. Try integer conversion
+            if not conversion_successful:
+                conversion_successful = self._try_integer_conversion(df, col, sample_values)
+            
+            # 4. Try float conversion
+            if not conversion_successful:
+                conversion_successful = self._try_float_conversion(df, col, sample_values)
+            
+            # 5. Try category conversion (for low-cardinality strings)
+            if not conversion_successful:
+                conversion_successful = self._try_category_conversion(df, col)
+            
+            # 6. Clean string data if still object type
+            if df[col].dtype == 'object':
+                self._clean_string_column(df, col)
+        
+        return df
+    
     def _try_datetime_conversion(self, df: pd.DataFrame, col: str, sample_values: list) -> bool:
         """Try to convert column to datetime"""
         # Check if values look like dates
         date_patterns = ['-', '/', ':', 'T', 'Z']
-        has_date_chars = any(any(p in str(v) for p in date_patterns) for v in sample_values[:3])
+        has_date_chars = any(any(p in str(v) for p in date_patterns) for v in sample_values[:5])
         
         if has_date_chars:
             try:
                 # Try multiple datetime formats
-                df[col] = pd.to_datetime(df[col], errors='coerce')
+                test_df = pd.to_datetime(df[col], errors='coerce')
                 
                 # Check if conversion was successful (at least 50% valid dates)
-                valid_ratio = df[col].notna().sum() / len(df)
-                if valid_ratio > 0.5:
-                    self.fixes_applied.append(f"✅ Converted '{col}' to datetime type")
+                valid_count = test_df.notna().sum()
+                valid_ratio = valid_count / len(df) if len(df) > 0 else 0
+                
+                if valid_ratio > 0.5 and valid_count > 0:
+                    df[col] = test_df
+                    self.fixes_applied.append(f"✅ Converted '{col}' to datetime type ({valid_count} valid dates)")
                     return True
                 else:
-                    # Revert if conversion failed
-                    df[col] = df[col].astype(str)
                     return False
-            except:
+            except Exception as e:
                 return False
         return False
     
     def _try_boolean_conversion(self, df: pd.DataFrame, col: str, sample_values: list) -> bool:
         """Try to convert column to boolean"""
-        unique_values = set(str(v).lower().strip() for v in sample_values)
+        unique_values = set(str(v).lower().strip() for v in sample_values if pd.notna(v))
         boolean_values = {'true', 'false', 't', 'f', 'yes', 'no', 'y', 'n', '1', '0', '1.0', '0.0'}
         
-        if unique_values.issubset(boolean_values) and len(unique_values) <= 4:
+        # Check if all unique values are boolean-like
+        if unique_values and unique_values.issubset(boolean_values) and len(unique_values) <= 4:
             try:
                 # Create mapping
                 bool_map = {
@@ -369,77 +569,91 @@ class SelfHealingAgent:
                 }
                 
                 df[col] = df[col].astype(str).str.lower().str.strip().map(bool_map)
-                self.fixes_applied.append(f"✅ Converted '{col}' to boolean type")
+                valid_count = df[col].notna().sum()
+                self.fixes_applied.append(f"✅ Converted '{col}' to boolean type ({valid_count} values)")
                 return True
-            except:
+            except Exception as e:
                 return False
         return False
     
     def _try_integer_conversion(self, df: pd.DataFrame, col: str, sample_values: list) -> bool:
         """Try to convert column to integer"""
         try:
-            # First convert to numeric
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            # First convert to numeric, removing common currency/percent symbols
+            cleaned = df[col].astype(str).str.replace('$', '').str.replace('%', '').str.replace(',', '')
+            numeric_series = pd.to_numeric(cleaned, errors='coerce')
             
             # Check if all non-null values are integers
-            non_null = df[col].dropna()
-            if len(non_null) > 0 and (non_null == non_null.astype(int)).all():
-                df[col] = df[col].astype('Int64')  # Nullable integer type
-                self.fixes_applied.append(f"✅ Converted '{col}' to integer type")
-                return True
-            elif len(non_null) > 0:
-                # Keep as float if has decimal values
-                self.fixes_applied.append(f"✅ Converted '{col}' to numeric (float) type")
-                return True
-        except:
+            non_null = numeric_series.dropna()
+            if len(non_null) > 0:
+                # Check if values are effectively integers
+                is_integer = (non_null == non_null.astype(int)).all()
+                
+                if is_integer:
+                    df[col] = numeric_series.astype('Int64')  # Nullable integer type
+                    valid_count = df[col].notna().sum()
+                    self.fixes_applied.append(f"✅ Converted '{col}' to integer type ({valid_count} values)")
+                    return True
             return False
-        return False
+        except Exception as e:
+            return False
     
     def _try_float_conversion(self, df: pd.DataFrame, col: str, sample_values: list) -> bool:
         """Try to convert column to float"""
         try:
             # Remove common non-numeric characters
-            df[col] = df[col].astype(str).str.replace(',', '').str.replace('$', '').str.replace('%', '').str.strip()
+            cleaned = df[col].astype(str).str.replace(',', '').str.replace('$', '').str.replace('%', '').str.strip()
             
             # Try numeric conversion
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            numeric_series = pd.to_numeric(cleaned, errors='coerce')
             
             # Check if conversion was successful (at least 70% valid numbers)
-            valid_ratio = df[col].notna().sum() / len(df)
-            if valid_ratio > 0.7:
-                self.fixes_applied.append(f"✅ Converted '{col}' to numeric type (removed special characters)")
+            valid_count = numeric_series.notna().sum()
+            valid_ratio = valid_count / len(df) if len(df) > 0 else 0
+            
+            if valid_ratio > 0.7 and valid_count > 0:
+                df[col] = numeric_series
+                self.fixes_applied.append(f"✅ Converted '{col}' to numeric type ({valid_count} values, removed special chars)")
                 return True
             else:
                 return False
-        except:
+        except Exception as e:
             return False
     
     def _try_category_conversion(self, df: pd.DataFrame, col: str) -> bool:
         """Try to convert low-cardinality string columns to category"""
         if df[col].dtype == 'object':
-            unique_ratio = df[col].nunique() / len(df)
+            unique_count = df[col].nunique()
+            unique_ratio = unique_count / len(df) if len(df) > 0 else 0
             
-            # Convert to category if low cardinality (< 50% unique values)
-            if unique_ratio < 0.5 and df[col].nunique() < 100:
+            # Convert to category if low cardinality (< 50% unique values and < 100 categories)
+            if unique_ratio < 0.5 and unique_count < 100 and unique_count > 1:
                 try:
                     df[col] = df[col].astype('category')
-                    self.fixes_applied.append(f"✅ Converted '{col}' to category type (optimized for {df[col].nunique()} unique values)")
+                    self.fixes_applied.append(f"✅ Converted '{col}' to category type ({unique_count} unique values)")
                     return True
-                except:
+                except Exception as e:
                     return False
         return False
     
     def _clean_string_column(self, df: pd.DataFrame, col: str):
-        """Clean string columns"""
+        """Clean string columns: remove extra whitespace and special characters"""
         try:
+            original_null_count = df[col].isnull().sum()
+            
             # Remove leading/trailing whitespace
-            original = df[col].copy()
             df[col] = df[col].astype(str).str.strip()
             
-            # Check if cleaning made a difference
-            if not df[col].equals(original):
-                self.fixes_applied.append(f"✅ Cleaned whitespace in '{col}'")
-        except:
+            # Replace empty strings with NaN
+            df[col] = df[col].replace('', np.nan)
+            
+            # Remove multiple spaces
+            df[col] = df[col].astype(str).str.replace(r'\s+', ' ', regex=True)
+            
+            new_null_count = df[col].isnull().sum()
+            if new_null_count > original_null_count:
+                self.fixes_applied.append(f"✅ Cleaned strings in '{col}' (removed {new_null_count - original_null_count} empty values)")
+        except Exception as e:
             pass
     
     def _remove_zero_variance(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -976,11 +1190,11 @@ class AnalysisAgent:
         return {}
 
 # ============================================================================
-# AGENT 6: VISUALIZATION AGENT
+# AGENT 6: VISUALIZATION AGENT (ENHANCED)
 # ============================================================================
 
 class VisualizationAgent:
-    """Autonomously selects optimal chart types and creates visualizations"""
+    """Autonomously selects optimal chart types with manual override capability"""
     
     def __init__(self, logger: AgentLogger):
         self.logger = logger
@@ -997,7 +1211,7 @@ class VisualizationAgent:
         self.visualizations = []
         
         # Create visualizations based on hypotheses
-        for hyp in hypotheses:
+        for hyp in hypotheses[:8]:  # Limit to 8 hypothesis visualizations
             viz = self._select_and_create_viz(df, hyp)
             if viz:
                 self.visualizations.append(viz)
@@ -1013,103 +1227,230 @@ class VisualizationAgent:
         
         return self.visualizations
     
-    def _select_and_create_viz(self, df: pd.DataFrame, hypothesis: Dict) -> Dict:
+    def get_available_chart_types(self) -> List[str]:
+        """Return all available chart types for manual override"""
+        return [
+            'scatter', 'line', 'bar', 'box', 'histogram', 
+            'kde', 'heatmap', 'violin', 'scatter_3d'
+        ]
+    
+    def create_custom_visualization(self, df: pd.DataFrame, x_col: str, y_col: Optional[str], 
+                                   chart_type: str) -> Union[Dict, None]:
+        """Create a custom visualization with manual chart type selection"""
+        self.logger.log(
+            "Visualization Agent",
+            f"Creating custom {chart_type} chart: {x_col} vs {y_col}",
+            "Manual chart override applied"
+        )
+        
+        try:
+            if chart_type == 'scatter':
+                if y_col:
+                    fig = px.scatter(df, x=x_col, y=y_col, 
+                                   title=f"Scatter: {x_col} vs {y_col}",
+                                   trendline="ols" if HAS_STATSMODELS else None)
+                    reasoning = "Scatter plot with OLS trendline shows correlation" if HAS_STATSMODELS else "Scatter plot shows correlation"
+                else:
+                    fig = px.scatter(df, x=x_col, title=f"Scatter: {x_col}")
+                    reasoning = "Scatter plot shows data distribution"
+                
+            elif chart_type == 'line':
+                if y_col:
+                    fig = px.line(df, x=x_col, y=y_col, 
+                                title=f"Line: {x_col} vs {y_col}")
+                else:
+                    fig = px.line(df, y=x_col, 
+                                title=f"Line: {x_col}")
+                reasoning = "Line chart shows trends and patterns"
+                
+            elif chart_type == 'bar':
+                if y_col:
+                    fig = px.bar(df, x=x_col, y=y_col, 
+                               title=f"Bar: {x_col} vs {y_col}")
+                else:
+                    counts = df[x_col].value_counts().head(20)
+                    fig = px.bar(x=counts.index, y=counts.values,
+                               labels={'x': x_col, 'y': 'Count'},
+                               title=f"Bar: {x_col} (Top 20)")
+                reasoning = "Bar chart enables category comparison"
+                
+            elif chart_type == 'box':
+                if y_col:
+                    fig = px.box(df, x=x_col, y=y_col,
+                               title=f"Box: {x_col} vs {y_col}")
+                    reasoning = "Box plot compares distributions across categories"
+                else:
+                    fig = px.box(df, y=x_col,
+                               title=f"Box: {x_col}")
+                    reasoning = "Box plot shows distribution, quartiles, and outliers"
+                
+            elif chart_type == 'histogram':
+                fig = px.histogram(df, x=x_col, nbins=30,
+                                 title=f"Histogram: {x_col}",
+                                 marginal="box")
+                reasoning = "Histogram shows frequency distribution with box plot"
+                
+            elif chart_type == 'kde':
+                fig = px.histogram(df, x=x_col, nbins=30, marginal="violin",
+                                 title=f"KDE Distribution: {x_col}")
+                reasoning = "KDE plot shows smooth probability distribution"
+                
+            elif chart_type == 'heatmap':
+                if len(df.select_dtypes(include=[np.number]).columns) >= 2:
+                    corr_matrix = df.select_dtypes(include=[np.number]).corr()
+                    fig = px.imshow(corr_matrix, 
+                                  title="Correlation Heatmap",
+                                  color_continuous_scale="RdBu",
+                                  aspect="auto")
+                    reasoning = "Heatmap shows all pairwise correlations"
+                else:
+                    return None
+                
+            elif chart_type == 'violin':
+                if y_col:
+                    fig = px.violin(df, x=x_col, y=y_col,
+                                  title=f"Violin: {x_col} vs {y_col}",
+                                  box=True, points="outliers")
+                    reasoning = "Violin plot shows distribution shape across categories"
+                else:
+                    fig = px.violin(df, y=x_col,
+                                  title=f"Violin: {x_col}",
+                                  box=True, points="outliers")
+                    reasoning = "Violin plot reveals distribution shape"
+                
+            elif chart_type == 'scatter_3d' and y_col:
+                # Get third numeric column if available
+                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                if len(numeric_cols) >= 3:
+                    z_col = [c for c in numeric_cols if c not in [x_col, y_col]][0]
+                    fig = px.scatter_3d(df, x=x_col, y=y_col, z=z_col,
+                                      title=f"3D Scatter: {x_col}, {y_col}, {z_col}")
+                    reasoning = "3D scatter plot shows three-dimensional relationships"
+                else:
+                    return None
+            else:
+                return None
+            
+            self.logger.log(
+                "Visualization Agent",
+                f"Successfully created {chart_type} chart",
+                reasoning
+            )
+            
+            return {
+                'chart_type': chart_type,
+                'figure': fig,
+                'title': f"{chart_type.title()}: {x_col}" + (f" vs {y_col}" if y_col else ""),
+                'reasoning': reasoning,
+                'x_col': x_col,
+                'y_col': y_col
+            }
+            
+        except Exception as e:
+            self.logger.log(
+                "Visualization Agent",
+                f"Failed to create {chart_type}: {str(e)}",
+                "Chart creation failed"
+            )
+            return None
+    
+    def _select_and_create_viz(self, df: pd.DataFrame, hypothesis: Dict) -> Union[Dict, None]:
         """Intelligently select chart type based on hypothesis"""
         hyp_type = hypothesis['type']
         variables = hypothesis['variables']
         
-        if hyp_type == 'correlation' and len(variables) == 2:
-            # Scatter plot for correlation
-            fig = px.scatter(df, x=variables[0], y=variables[1], 
-                           title=f"Correlation: {variables[0]} vs {variables[1]}")
+        try:
+            if hyp_type == 'correlation' and len(variables) == 2:
+                # Scatter plot for correlation
+                fig = px.scatter(df, x=variables[0], y=variables[1], 
+                               title=f"Correlation: {variables[0]} vs {variables[1]}",
+                               trendline="ols" if HAS_STATSMODELS else None)
+                
+                self.logger.log(
+                    "Visualization Agent",
+                    f"Selected scatter plot for correlation between {variables[0]} and {variables[1]}",
+                    "Scatter plots best show relationships between two numeric variables"
+                )
+                
+                return {
+                    'chart_type': 'scatter',
+                    'figure': fig,
+                    'title': f"{variables[0]} vs {variables[1]}",
+                    'reasoning': 'Scatter plot selected to visualize correlation between two numeric variables',
+                    'x_col': variables[0],
+                    'y_col': variables[1]
+                }
             
-            # Add manual trendline using numpy
-            x_data = df[variables[0]].dropna()
-            y_data = df[variables[1]].dropna()
-            if len(x_data) > 1 and len(y_data) > 1:
-                # Align the data
-                combined = pd.DataFrame({variables[0]: df[variables[0]], variables[1]: df[variables[1]]}).dropna()
-                if len(combined) > 1:
-                    z = np.polyfit(combined[variables[0]], combined[variables[1]], 1)
-                    p = np.poly1d(z)
-                    fig.add_trace(go.Scatter(
-                        x=combined[variables[0]].sort_values(),
-                        y=p(combined[variables[0]].sort_values()),
-                        mode='lines',
-                        name='Trendline',
-                        line=dict(color='red', dash='dash')
-                    ))
+            elif hyp_type == 'trend' and len(variables) == 1:
+                # Line chart for trends
+                fig = px.line(df, y=variables[0], 
+                             title=f"Trend Analysis: {variables[0]}",
+                             labels={'index': 'Index', variables[0]: variables[0]})
+                
+                self.logger.log(
+                    "Visualization Agent",
+                    f"Selected line chart for trend in {variables[0]}",
+                    "Line charts best show trends over sequential data"
+                )
+                
+                return {
+                    'chart_type': 'line',
+                    'figure': fig,
+                    'title': f"Trend: {variables[0]}",
+                    'reasoning': 'Line chart selected to visualize trend over time/sequence',
+                    'x_col': 'index',
+                    'y_col': variables[0]
+                }
             
+            elif hyp_type == 'distribution' and len(variables) == 1:
+                # Histogram for distribution
+                fig = px.histogram(df, x=variables[0], 
+                                 title=f"Distribution: {variables[0]}",
+                                 marginal="box")
+                
+                self.logger.log(
+                    "Visualization Agent",
+                    f"Selected histogram for distribution of {variables[0]}",
+                    "Histograms best show frequency distributions"
+                )
+                
+                return {
+                    'chart_type': 'histogram',
+                    'figure': fig,
+                    'title': f"Distribution: {variables[0]}",
+                    'reasoning': 'Histogram selected to show frequency distribution',
+                    'x_col': variables[0],
+                    'y_col': None
+                }
+            
+            elif hyp_type == 'comparison' and len(variables) == 2:
+                # Box plot for group comparison
+                fig = px.box(df, x=variables[0], y=variables[1],
+                            title=f"Comparison: {variables[1]} across {variables[0]}")
+                
+                self.logger.log(
+                    "Visualization Agent",
+                    f"Selected box plot for comparing {variables[1]} across {variables[0]} categories",
+                    "Box plots best show distributions across categories"
+                )
+                
+                return {
+                    'chart_type': 'box',
+                    'figure': fig,
+                    'title': f"{variables[1]} by {variables[0]}",
+                    'reasoning': 'Box plot selected to compare distributions across groups',
+                    'x_col': variables[0],
+                    'y_col': variables[1]
+                }
+            
+            return None
+        except Exception as e:
             self.logger.log(
                 "Visualization Agent",
-                f"Selected scatter plot for correlation between {variables[0]} and {variables[1]}",
-                "Scatter plots best show relationships between two numeric variables"
+                f"Error creating visualization: {str(e)}",
+                "Failed to create chart"
             )
-            
-            return {
-                'chart_type': 'scatter',
-                'figure': fig,
-                'title': f"{variables[0]} vs {variables[1]}",
-                'reasoning': 'Scatter plot selected to visualize correlation between two numeric variables'
-            }
-        
-        elif hyp_type == 'trend' and len(variables) == 1:
-            # Line chart for trends
-            fig = px.line(df, y=variables[0], 
-                         title=f"Trend Analysis: {variables[0]}",
-                         labels={'index': 'Index', variables[0]: variables[0]})
-            
-            self.logger.log(
-                "Visualization Agent",
-                f"Selected line chart for trend in {variables[0]}",
-                "Line charts best show trends over sequential data"
-            )
-            
-            return {
-                'chart_type': 'line',
-                'figure': fig,
-                'title': f"Trend: {variables[0]}",
-                'reasoning': 'Line chart selected to visualize trend over time/sequence'
-            }
-        
-        elif hyp_type == 'distribution' and len(variables) == 1:
-            # Histogram for distribution
-            fig = px.histogram(df, x=variables[0], 
-                             title=f"Distribution: {variables[0]}",
-                             marginal="box")
-            
-            self.logger.log(
-                "Visualization Agent",
-                f"Selected histogram for distribution of {variables[0]}",
-                "Histograms best show frequency distributions"
-            )
-            
-            return {
-                'chart_type': 'histogram',
-                'figure': fig,
-                'title': f"Distribution: {variables[0]}",
-                'reasoning': 'Histogram selected to show frequency distribution'
-            }
-        
-        elif hyp_type == 'comparison' and len(variables) == 2:
-            # Box plot for group comparison
-            fig = px.box(df, x=variables[0], y=variables[1],
-                        title=f"Comparison: {variables[1]} across {variables[0]}")
-            
-            self.logger.log(
-                "Visualization Agent",
-                f"Selected box plot for comparing {variables[1]} across {variables[0]} categories",
-                "Box plots best show distributions across categories"
-            )
-            
-            return {
-                'chart_type': 'box',
-                'figure': fig,
-                'title': f"{variables[1]} by {variables[0]}",
-                'reasoning': 'Box plot selected to compare distributions across groups'
-            }
-        
-        return None
+            return None
     
     def _create_overview_visualizations(self, df: pd.DataFrame):
         """Create general overview visualizations"""
@@ -1117,24 +1458,30 @@ class VisualizationAgent:
         
         # Correlation heatmap if multiple numeric columns
         if len(numeric_cols) >= 2:
-            corr_matrix = df[numeric_cols].corr()
-            fig = px.imshow(corr_matrix, 
-                           title="Correlation Heatmap",
-                           color_continuous_scale="RdBu",
-                           aspect="auto")
-            
-            self.logger.log(
-                "Visualization Agent",
-                "Created correlation heatmap for all numeric variables",
-                "Heatmap provides overview of all relationships"
-            )
-            
-            self.visualizations.append({
-                'chart_type': 'heatmap',
-                'figure': fig,
-                'title': 'Correlation Matrix',
-                'reasoning': 'Heatmap selected to show all pairwise correlations at once'
-            })
+            try:
+                corr_matrix = df[numeric_cols].corr()
+                fig = px.imshow(corr_matrix, 
+                               title="Correlation Heatmap",
+                               color_continuous_scale="RdBu",
+                               aspect="auto",
+                               zmin=-1, zmax=1)
+                
+                self.logger.log(
+                    "Visualization Agent",
+                    "Created correlation heatmap for all numeric variables",
+                    "Heatmap provides overview of all relationships"
+                )
+                
+                self.visualizations.append({
+                    'chart_type': 'heatmap',
+                    'figure': fig,
+                    'title': 'Correlation Matrix',
+                    'reasoning': 'Heatmap selected to show all pairwise correlations at once',
+                    'x_col': 'correlation',
+                    'y_col': 'all_numeric'
+                })
+            except:
+                pass
 
 # ============================================================================
 # AGENT 7: EXPLANATION AGENT
@@ -1266,11 +1613,39 @@ class StockAnalysisAgent:
     def __init__(self, logger: AgentLogger):
         self.logger = logger
     
-    def fetch_stock_data(self, symbol: str, period: str) -> pd.DataFrame:
-        """Fetch stock/crypto data"""
+    def search_ticker_symbol(self, query: str) -> Optional[str]:
+        """Search for a valid stock ticker symbol using Yahoo Finance's unofficial search API"""
+        if not query or not str(query).strip():
+            return None
+            
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                data = response.json()
+                if 'quotes' in data and len(data['quotes']) > 0:
+                    # Return the symbol of the first matching quote
+                    return data['quotes'][0].get('symbol')
+        except Exception as e:
+            self.logger.log(
+                "Stock Analysis Agent",
+                f"Error searching symbol for query '{query}': {str(e)}",
+                "Falling back to exact original input"
+            )
+        
+        # Fall back to returning original input if search fails
+        return query.strip().upper()
+
+    def fetch_stock_data(self, query: str, period: str) -> pd.DataFrame:
+        """Fetch stock/crypto data, automatically resolving names to symbols if necessary"""
+        # Resolve company name to ticker symbol first
+        symbol = self.search_ticker_symbol(query)
+        
         self.logger.log(
             "Stock Analysis Agent",
-            f"Fetching market data for {symbol}",
+            f"Fetching market data for resolved symbol {symbol} (Original search: {query})",
             f"Time period: {period}"
         )
         
@@ -1457,11 +1832,13 @@ def main():
             uploaded_file = st.file_uploader(
                 "Upload CSV or Excel file",
                 type=['csv', 'xlsx', 'xls'],
-                help="Upload your dataset for autonomous analysis"
+                help="Upload your dataset for autonomous analysis (supports multi-sheet Excel)"
             )
             
             # Sample data option
             use_sample = st.checkbox("Use sample dataset (Iris)")
+            
+            df = None
             
             if use_sample:
                 from sklearn.datasets import load_iris
@@ -1472,17 +1849,46 @@ def main():
             elif uploaded_file:
                 # Initialize agents
                 ingestion_agent = DataIngestionAgent(logger)
-                df = ingestion_agent.ingest_csv(uploaded_file)
+                data = ingestion_agent.ingest_csv(uploaded_file)
                 
-                if df is not None:
+                # Handle multi-sheet or single sheet
+                if isinstance(data, dict):
+                    # Multiple sheets detected
+                    st.success(f"✅ Found {len(data)} sheets: {list(data.keys())}")
+                    
+                    # Sheet selection UI
+                    st.subheader("📄 Multi-Sheet Selection")
+                    
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        selected_sheets = st.multiselect(
+                            "Select sheets to analyze:",
+                            list(data.keys()),
+                            default=list(data.keys())
+                        )
+                    
+                    with col2:
+                        merge_strategy = st.selectbox(
+                            "Merge strategy:",
+                            ["Concatenate rows", "Merge on index"],
+                            help="How to combine multiple sheets"
+                        )
+                    
+                    if selected_sheets:
+                        sheets_to_merge = {k: v for k, v in data.items() if k in selected_sheets}
+                        
+                        # Merge strategy
+                        merge_strat = 'concat' if merge_strategy == "Concatenate rows" else 'merge_on_index'
+                        df = ingestion_agent.merge_sheets(sheets_to_merge, merge_strategy=merge_strat)
+                        
+                        st.success(f"✅ Merged {len(selected_sheets)} sheets: {len(df)} rows × {len(df.columns)} columns")
+                elif isinstance(data, pd.DataFrame):
+                    df = data
                     st.success(f"✅ Loaded {len(df)} rows and {len(df.columns)} columns")
                 else:
                     st.error("❌ Failed to load file")
-                    df = None
-            else:
-                df = None
             
-            if df is not None:
+            if df is not None and len(df) > 0:
                 # Show data preview
                 with st.expander("📋 Data Preview"):
                     st.dataframe(df.head(10))
@@ -1491,6 +1897,9 @@ def main():
                 st.subheader("2️⃣ Select Variables to Analyze")
                 
                 all_columns = list(df.columns)
+                # Filter out system columns
+                all_columns = [c for c in all_columns if not c.startswith('_')]
+                
                 selected_columns = st.multiselect(
                     "Choose variables for analysis:",
                     all_columns,
@@ -1509,12 +1918,18 @@ def main():
                     
                     if suggestions:
                         st.markdown("**Suggested fields you can generate:**")
-                        for i, sug in enumerate(suggestions[:6], 1):  # Show top 6 suggestions
-                            col1, col2 = st.columns([3, 1])
-                            with col1:
-                                st.write(f"{i}. **{sug['name']}** - {sug['description']}")
-                            with col2:
-                                if st.button(f"Generate", key=f"gen_{i}"):
+                        
+                        # Create tabs for suggestions
+                        suggestion_cols = st.columns(min(3, len(suggestions)))
+                        
+                        for idx, sug in enumerate(suggestions[:6]):  # Show top 6 suggestions
+                            col_idx = idx % len(suggestion_cols)
+                            
+                            with suggestion_cols[col_idx]:
+                                st.markdown(f"**{sug['name']}**")
+                                st.caption(sug['description'])
+                                
+                                if st.button(f"Generate", key=f"gen_{idx}"):
                                     df = field_gen_agent.generate_field(df, sug['name'], sug['type'])
                                     st.session_state['df_modified'] = df
                                     st.success(f"✅ Generated '{sug['name']}'")
@@ -1523,11 +1938,11 @@ def main():
                     st.markdown("---")
                     st.markdown("**Or create a custom field:**")
                     
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns([2, 2, 1])
                     with col1:
                         custom_field_name = st.text_input(
                             "New field name:",
-                            placeholder="e.g., profit_margin, growth_rate"
+                            placeholder="e.g., profit_margin"
                         )
                     
                     with col2:
@@ -1538,30 +1953,24 @@ def main():
                              'cumulative_sum', 'squared', 'logarithm']
                         )
                     
-                    if st.button("🚀 Generate Custom Field"):
-                        if custom_field_name:
-                            field_gen_agent = FieldGenerationAgent(logger)
-                            df = field_gen_agent.generate_field(df, custom_field_name, derivation_type)
-                            st.session_state['df_modified'] = df
-                            
-                            if custom_field_name in df.columns:
-                                st.success(f"✅ Successfully generated field: '{custom_field_name}'")
-                                if field_gen_agent.derivation_log:
-                                    st.info(f"📝 {field_gen_agent.derivation_log[-1]}")
-                                st.rerun()
-                            else:
-                                st.warning("⚠️ Field generation attempted but not successful")
-                        else:
-                            st.warning("Please enter a field name")
+                    with col3:
+                        if st.button("🚀 Generate", key="custom_field_btn"):
+                            if custom_field_name:
+                                field_gen_agent = FieldGenerationAgent(logger)
+                                df = field_gen_agent.generate_field(df, custom_field_name, derivation_type)
+                                st.session_state['df_modified'] = df
+                                
+                                if custom_field_name in df.columns:
+                                    st.success(f"✅ Generated '{custom_field_name}'")
+                                    if field_gen_agent.derivation_log:
+                                        st.info(field_gen_agent.derivation_log[-1])
+                                    st.rerun()
                 
                 # Update selected columns to include generated fields
                 if 'df_modified' in st.session_state:
                     df = st.session_state['df_modified']
                     all_columns = list(df.columns)
-                    
-                    # Show generated fields badge
-                    if hasattr(field_gen_agent, 'generated_fields') and field_gen_agent.generated_fields:
-                        st.success(f"🎉 {len(field_gen_agent.generated_fields)} field(s) generated and ready for analysis")
+                    all_columns = [c for c in all_columns if not c.startswith('_')]
                 
                 st.markdown("---")
                 
@@ -1574,7 +1983,7 @@ def main():
                             with st.expander("📋 Initial Data Types"):
                                 st.dataframe(df_analysis.dtypes.to_frame('Original Data Type'))
                             
-                            with st.spinner("🤖 Agents are working..."):
+                            with st.spinner("🤖 Agents are working... This may take a moment"):
                                 # Data Ingestion Agent
                                 ingestion_agent = DataIngestionAgent(logger)
                                 validation_report = ingestion_agent.validate_data(df_analysis)
@@ -1607,6 +2016,7 @@ def main():
                                 viz_agent = VisualizationAgent(logger)
                                 visualizations = viz_agent.create_visualizations(df_clean, hypotheses)
                                 st.session_state['visualizations'] = visualizations
+                                st.session_state['viz_agent'] = viz_agent  # Store agent for manual override
                                 
                                 # Explanation Agent
                                 explanation_agent = ExplanationAgent(logger)
@@ -1650,8 +2060,10 @@ def main():
                     with col2:
                         st.markdown("#### ✅ Fixes Applied")
                         if st.session_state.get('fixes'):
-                            for fix in st.session_state['fixes']:
+                            for fix in st.session_state['fixes'][:10]:  # Show first 10
                                 st.success(fix)
+                            if len(st.session_state.get('fixes', [])) > 10:
+                                st.info(f"... and {len(st.session_state['fixes']) - 10} more fixes")
                         else:
                             st.info("No fixes needed")
                     
@@ -1712,72 +2124,73 @@ def main():
                     
                     if 'df_clean' in st.session_state:
                         df_compare = st.session_state['df_clean']
-                        numeric_cols = df_compare.select_dtypes(include=[np.number]).columns.tolist()
+                        # Include categorical or object strings that aren't overly broad (e.g. limit to unique values if needed, or just all columns)
+                        # We will allow all columns that do not start with '_'
+                        available_cols = [c for c in df_compare.columns if not c.startswith('_')]
                         
-                        if len(numeric_cols) >= 2:
+                        if len(available_cols) >= 2:
                             st.markdown("**Compare any two variables dynamically:**")
                             
                             col1, col2, col3 = st.columns(3)
                             with col1:
-                                var1 = st.selectbox("First variable:", numeric_cols, key="compare_var1")
+                                var1 = st.selectbox("First variable:", available_cols, key="compare_var1")
                             with col2:
                                 var2 = st.selectbox("Second variable:", 
-                                                   [col for col in numeric_cols if col != var1], 
+                                                   [col for col in available_cols if col != var1], 
                                                    key="compare_var2")
                             with col3:
                                 comparison_type = st.selectbox("Comparison type:", 
                                                               ["Scatter Plot", "Line Comparison", "Distribution Compare"],
                                                               key="compare_type")
                             
-                            if st.button("📊 Generate Comparison", key="generate_compare"):
-                                with st.spinner("Creating comparison visualization..."):
-                                    if comparison_type == "Scatter Plot":
-                                        fig = px.scatter(df_compare, x=var1, y=var2, 
-                                                       title=f"Relationship: {var1} vs {var2}")
-                                        
-                                        # Add manual trendline using numpy
-                                        combined = df_compare[[var1, var2]].dropna()
-                                        if len(combined) > 1:
-                                            z = np.polyfit(combined[var1], combined[var2], 1)
-                                            p = np.poly1d(z)
-                                            fig.add_trace(go.Scatter(
-                                                x=combined[var1].sort_values(),
-                                                y=p(combined[var1].sort_values()),
-                                                mode='lines',
-                                                name='Trendline',
-                                                line=dict(color='red', dash='dash')
-                                            ))
-                                        
-                                        st.plotly_chart(fig, use_container_width=True)
-                                        
-                                        # Calculate correlation
+                            with st.spinner("Creating comparison visualization..."):
+                                is_var1_numeric = pd.api.types.is_numeric_dtype(df_compare[var1])
+                                is_var2_numeric = pd.api.types.is_numeric_dtype(df_compare[var2])
+                                
+                                if comparison_type == "Scatter Plot":
+                                    # Only add trendline if both variables are numeric and statsmodels is available
+                                    use_trendline = "ols" if (is_var1_numeric and is_var2_numeric and HAS_STATSMODELS) else None
+                                    
+                                    fig = px.scatter(df_compare, x=var1, y=var2, 
+                                                   title=f"Relationship: {var1} vs {var2}",
+                                                   trendline=use_trendline)
+                                    st.plotly_chart(fig, use_container_width=True)
+                                    
+                                    # Calculate correlation only if both are numeric
+                                    if is_var1_numeric and is_var2_numeric:
                                         corr = df_compare[var1].corr(df_compare[var2])
                                         st.info(f"📈 Correlation coefficient: {corr:.3f}")
+                                    else:
+                                        st.info("ℹ️ Correlation coefficient skipped (requires numeric data for both variables)")
                                         
-                                    elif comparison_type == "Line Comparison":
-                                        fig = go.Figure()
-                                        fig.add_trace(go.Scatter(y=df_compare[var1], name=var1, 
-                                                               line=dict(color='blue')))
-                                        fig.add_trace(go.Scatter(y=df_compare[var2], name=var2, 
-                                                               line=dict(color='red')))
-                                        fig.update_layout(title=f"Trend Comparison: {var1} vs {var2}")
-                                        st.plotly_chart(fig, use_container_width=True)
-                                        
-                                    elif comparison_type == "Distribution Compare":
-                                        fig = go.Figure()
-                                        fig.add_trace(go.Histogram(x=df_compare[var1], name=var1, 
-                                                                 opacity=0.7))
-                                        fig.add_trace(go.Histogram(x=df_compare[var2], name=var2, 
-                                                                 opacity=0.7))
-                                        fig.update_layout(title=f"Distribution: {var1} vs {var2}",
-                                                        barmode='overlay')
-                                        st.plotly_chart(fig, use_container_width=True)
-                                        
-                                        # Statistical comparison
+                                elif comparison_type == "Line Comparison":
+                                    fig = go.Figure()
+                                    # Support sorting if one variable is categorical/date acting as 'x'
+                                    fig.add_trace(go.Scatter(y=df_compare[var1], name=var1, 
+                                                           line=dict(color='blue')))
+                                    fig.add_trace(go.Scatter(y=df_compare[var2], name=var2, 
+                                                           line=dict(color='red')))
+                                    fig.update_layout(title=f"Trend Comparison: {var1} vs {var2}")
+                                    st.plotly_chart(fig, use_container_width=True)
+                                    
+                                elif comparison_type == "Distribution Compare":
+                                    fig = go.Figure()
+                                    fig.add_trace(go.Histogram(x=df_compare[var1], name=var1, 
+                                                             opacity=0.7))
+                                    fig.add_trace(go.Histogram(x=df_compare[var2], name=var2, 
+                                                             opacity=0.7))
+                                    fig.update_layout(title=f"Distribution: {var1} vs {var2}",
+                                                    barmode='overlay')
+                                    st.plotly_chart(fig, use_container_width=True)
+                                    
+                                    # Statistical comparison only if numeric
+                                    if is_var1_numeric and is_var2_numeric:
                                         stat, p_val = stats.ttest_ind(df_compare[var1].dropna(), 
                                                                       df_compare[var2].dropna())
                                         st.info(f"📊 T-test p-value: {p_val:.4f} - " + 
                                                ("Significantly different" if p_val < 0.05 else "Not significantly different"))
+                                    else:
+                                        st.info("ℹ️ T-test skipped (requires numeric data for both variables)")
     
     # ========================================================================
     # STOCK ANALYSIS MODE
@@ -1791,9 +2204,9 @@ def main():
             
             with col1:
                 symbol = st.text_input(
-                    "Enter Stock Symbol:",
-                    value="AAPL",
-                    help="Examples: AAPL, TSLA"
+                    "Stock Symbol or Company Name:",
+                    value="Apple",
+                    help="Examples: AAPL, Apple, MSFT, Microsoft, BTC-USD"
                 )
             
             with col2:
@@ -1827,12 +2240,21 @@ def main():
             if st.button("🚀 Analyze Stock", type="primary"):
                 if symbol and features:
                     try:
-                        with st.spinner("📊 Fetching and analyzing data..."):
+                        with st.spinner(f"🔍 Analyzing '{symbol}'..."):
                             # Initialize stock agent
                             stock_agent = StockAnalysisAgent(logger)
                             
+                            # First resolve the symbol
+                            resolved_symbol = stock_agent.search_ticker_symbol(symbol)
+                            
+                            if resolved_symbol and resolved_symbol != symbol.strip().upper():
+                                st.info(f"Resolved '{symbol}' to ticker: **{resolved_symbol}**")
+                            
+                            if not resolved_symbol:
+                                resolved_symbol = symbol
+                            
                             # Fetch data
-                            df_stock = stock_agent.fetch_stock_data(symbol, period)
+                            df_stock = stock_agent.fetch_stock_data(resolved_symbol, period)
                             
                             if df_stock is not None and not df_stock.empty:
                                 # Analyze stock
@@ -1840,13 +2262,14 @@ def main():
                                 
                                 st.session_state['stock_data'] = df_stock
                                 st.session_state['stock_analysis'] = stock_analysis
-                                st.session_state['stock_symbol'] = symbol
+                                st.session_state['stock_symbol'] = resolved_symbol
+                                st.session_state['stock_query'] = symbol
                                 
                                 st.success("✅ Analysis complete!")
                                 st.balloons()
                                 st.rerun()
                             else:
-                                st.error(f"❌ No data available for symbol '{symbol}'. Please verify the symbol is correct.")
+                                st.error(f"❌ No data available for resolved symbol '{resolved_symbol}'. Please verify the symbol is correct.")
                                 st.info("💡 **Tip:** For crypto, use format like 'BTC-USD' or 'ETH-USD'")
                                 
                     except Exception as e:
@@ -1863,22 +2286,58 @@ def main():
             # Display results
             if 'stock_analysis' in st.session_state:
                 st.markdown("---")
-                st.subheader(f"📊 Analysis Results: {st.session_state['stock_symbol']}")
+                st.subheader(f"📊 Dynamic Stock Dashboard: {st.session_state['stock_symbol']}")
                 
-                # Display insights
-                for insight in st.session_state['stock_analysis']['insights']:
-                    st.info(insight)
+                df_stock = st.session_state['stock_data']
+                
+                # KPI Cards for dynamic overview
+                if len(df_stock) >= 2:
+                    current_price = df_stock['Close'].iloc[-1]
+                    prev_price = df_stock['Close'].iloc[-2]
+                    price_change = current_price - prev_price
+                    price_pct = (price_change / prev_price) * 100
+                    
+                    st.markdown("### 📈 Key Metrics")
+                    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+                    kpi1.metric("Current Price", f"${current_price:.2f}", f"{price_change:.2f} ({price_pct:.2f}%)")
+                    
+                    if 'Volume' in df_stock.columns:
+                        avg_vol = df_stock['Volume'].mean()
+                        current_vol = df_stock['Volume'].iloc[-1]
+                        vol_delta = f"{(current_vol - avg_vol) / avg_vol * 100:.1f}% vs Avg" if avg_vol > 0 else "0%"
+                        kpi2.metric("Trading Volume", f"{int(current_vol):,}", vol_delta)
+                    
+                    if 'High' in df_stock.columns and 'Low' in df_stock.columns:
+                        kpi3.metric("High (Period)", f"${df_stock['High'].max():.2f}")
+                        kpi4.metric("Low (Period)", f"${df_stock['Low'].min():.2f}")
                 
                 st.markdown("---")
                 
-                # Create visualizations
-                df_stock = st.session_state['stock_data']
+                # Display insights in an expander
+                with st.expander("🤖 Agent Analysis Insights", expanded=True):
+                    for insight in st.session_state['stock_analysis']['insights']:
+                        st.info(insight)
+                
+                # Interactive Settings
+                st.markdown("### ⚙️ Dashboard Controls")
+                dash_col1, dash_col2 = st.columns([1, 2])
+                with dash_col1:
+                    chart_style = st.radio("Price Chart Style:", ["Line", "Candlestick"], horizontal=True)
                 
                 # Price chart
-                st.subheader("📈 Price Chart")
+                st.markdown("### 📈 Price Chart Analysis")
                 fig_price = go.Figure()
-                fig_price.add_trace(go.Scatter(x=df_stock.index, y=df_stock['Close'], 
-                                              name='Close Price', line=dict(color='blue', width=2)))
+                
+                if chart_style == "Candlestick" and all(c in df_stock.columns for c in ['Open', 'High', 'Low', 'Close']):
+                    fig_price.add_trace(go.Candlestick(x=df_stock.index,
+                                                      open=df_stock['Open'],
+                                                      high=df_stock['High'],
+                                                      low=df_stock['Low'],
+                                                      close=df_stock['Close'],
+                                                      name='Price'))
+                else:
+                    fig_price.add_trace(go.Scatter(x=df_stock.index, y=df_stock['Close'], 
+                                                  name='Close Price', line=dict(color='blue', width=2)))
                 
                 if 'MA_20' in df_stock.columns:
                     fig_price.add_trace(go.Scatter(x=df_stock.index, y=df_stock['MA_20'], 
@@ -1888,32 +2347,46 @@ def main():
                     fig_price.add_trace(go.Scatter(x=df_stock.index, y=df_stock['MA_50'], 
                                                   name='MA 50', line=dict(color='red', dash='dash')))
                 
-                fig_price.update_layout(title="Price with Moving Averages", 
-                                       xaxis_title="Date", yaxis_title="Price ($)")
+                fig_price.update_layout(title=f"{st.session_state['stock_symbol']} Price & Moving Averages", 
+                                       xaxis_title="Date", yaxis_title="Price",
+                                       xaxis_rangeslider_visible=True if chart_style == "Candlestick" else False)
+                                       
                 st.plotly_chart(fig_price, use_container_width=True)
                 
-                # Additional charts based on selected features
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if 'volatility' in features and 'Volatility' in df_stock.columns:
-                        st.subheader("📊 Volatility")
-                        fig_vol = px.line(df_stock, y='Volatility', title="20-Day Volatility")
-                        st.plotly_chart(fig_vol, use_container_width=True)
-                
-                with col2:
-                    if 'rsi' in features and 'RSI' in df_stock.columns:
-                        st.subheader("📊 RSI Indicator")
-                        fig_rsi = go.Figure()
-                        fig_rsi.add_trace(go.Scatter(x=df_stock.index, y=df_stock['RSI'], 
-                                                    name='RSI', line=dict(color='purple')))
-                        fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought")
-                        fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold")
-                        fig_rsi.update_layout(title="Relative Strength Index (RSI)")
-                        st.plotly_chart(fig_rsi, use_container_width=True)
+                # Additional charts based on selected features in a dynamic grid
+                opt_charts = []
+                if 'volatility' in features and 'Volatility' in df_stock.columns:
+                    opt_charts.append("volatility")
+                if 'rsi' in features and 'RSI' in df_stock.columns:
+                    opt_charts.append("rsi")
+                    
+                if opt_charts:
+                    st.markdown("---")
+                    st.markdown("### 📉 Technical Indicators")
+                    chart_cols = st.columns(len(opt_charts))
+                    
+                    idx = 0
+                    if "volatility" in opt_charts:
+                        with chart_cols[idx]:
+                            st.markdown("#### Volatility (20-Day)")
+                            fig_vol = px.line(df_stock, y='Volatility')
+                            st.plotly_chart(fig_vol, use_container_width=True)
+                        idx += 1
+                        
+                    if "rsi" in opt_charts:
+                        with chart_cols[idx]:
+                            st.markdown("#### Relative Strength Index (RSI)")
+                            fig_rsi = go.Figure()
+                            fig_rsi.add_trace(go.Scatter(x=df_stock.index, y=df_stock['RSI'], 
+                                                        name='RSI', line=dict(color='purple')))
+                            fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought")
+                            fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold")
+                            fig_rsi.update_yaxes(range=[0, 100])
+                            st.plotly_chart(fig_rsi, use_container_width=True)
+                        idx += 1
     
     # ========================================================================
-    # VISUALIZATIONS TAB
+    # VISUALIZATIONS TAB (ENHANCED)
     # ========================================================================
     
     with tab2:
@@ -1930,7 +2403,7 @@ def main():
                 numeric_cols = df_clean.select_dtypes(include=[np.number]).columns
                 
                 if len(numeric_cols) > 0:
-                    st.markdown("### 📊 Key Metrics Summary")
+                    st.markdown("### 📊 Key Metrics Summary (KPI Cards)")
                     
                     # Create KPI cards
                     num_cards = min(4, len(numeric_cols))
@@ -1940,21 +2413,90 @@ def main():
                         with cols[idx]:
                             value = df_clean[col].mean()
                             delta = df_clean[col].std()
+                            min_val = df_clean[col].min()
+                            max_val = df_clean[col].max()
                             
                             st.metric(
                                 label=col,
                                 value=f"{value:.2f}",
-                                delta=f"σ: {delta:.2f}"
+                                delta=f"σ: {delta:.2f}",
+                                help=f"Min: {min_val:.2f}, Max: {max_val:.2f}"
                             )
                     
                     st.markdown("---")
+                    
+                    # Distribution Analysis Section
+                    st.markdown("### 📈 Distribution Analysis")
+                    
+                    with st.expander("📊 View Distribution Details"):
+                        for col in numeric_cols[:6]:  # Show first 6 numeric columns
+                            with st.expander(f"**{col}**"):
+                                col1, col2, col3 = st.columns(3)
+                                
+                                with col1:
+                                    st.metric("Mean", f"{df_clean[col].mean():.2f}")
+                                with col2:
+                                    st.metric("Median", f"{df_clean[col].median():.2f}")
+                                with col3:
+                                    st.metric("Std Dev", f"{df_clean[col].std():.2f}")
+                                
+                                # Mini distribution chart
+                                fig = px.histogram(df_clean, x=col, nbins=20, 
+                                                 title=f"Distribution of {col}")
+                                st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.markdown("---")
             
-            # Display all visualizations
+            # Display all visualizations with manual override option
+            viz_agent = st.session_state.get('viz_agent')
+            available_chart_types = viz_agent.get_available_chart_types() if viz_agent else []
+            
+            st.markdown("### 🎨 Autonomous Visualizations Dashboard")
+            
+            # Create a 2-column grid for dynamic dashboard layout
+            dashboard_cols = st.columns(2)
+            
             for i, viz in enumerate(visualizations, 1):
-                st.subheader(f"{i}. {viz['title']}")
-                st.caption(f"💡 **Agent Reasoning:** {viz['reasoning']}")
-                st.plotly_chart(viz['figure'], use_container_width=True)
-                st.markdown("---")
+                col_idx = (i - 1) % 2
+                with dashboard_cols[col_idx]:
+                    st.markdown(f"#### {viz['title']}")
+                    
+                    with st.expander("⚙️ Settings & Agent Reasoning"):
+                        st.caption(f"💡 **Agent Reasoning:** {viz['reasoning']}")
+                        
+                        override_key = f"override_toggle_{i}"
+                        st.checkbox("Enable manual chart override", key=override_key)
+                        
+                        if st.session_state.get(override_key, False):
+                            if 'df_clean' in st.session_state:
+                                df_for_override = st.session_state['df_clean']
+                                all_cols = [c for c in df_for_override.columns if not c.startswith('_')]
+                                x_col_override = st.selectbox("X-axis variable:", all_cols, key=f"x_override_{i}")
+                                
+                                numeric_cols_list = df_for_override.select_dtypes(include=[np.number]).columns.tolist()
+                                y_col_override = st.selectbox("Y-axis (optional):", [None] + numeric_cols_list, key=f"y_override_{i}")
+                            else:
+                                x_col_override = viz.get('x_col', '')
+                                y_col_override = viz.get('y_col')
+                                
+                            chart_type_override = st.selectbox("Chart type:", 
+                                available_chart_types if available_chart_types else ['scatter', 'line', 'bar'], 
+                                index=0, key=f"chart_override_{i}")
+                                
+                            if st.button("📊 Generate Override", key=f"gen_override_{i}"):
+                                if viz_agent and x_col_override:
+                                    df_for_override = st.session_state.get('df_clean', pd.DataFrame())
+                                    custom_viz = viz_agent.create_custom_visualization(
+                                        df_for_override, x_col_override, y_col_override, chart_type_override
+                                    )
+                                    if custom_viz:
+                                        viz = custom_viz # Replace locally to render the manual chart
+                                        st.success("✅ Custom chart generated successfully!")
+                                    else:
+                                        st.warning("⚠️ Could not create chart with selected options.")
+                    
+                    st.plotly_chart(viz['figure'], use_container_width=True)
+                    st.markdown("---")
         else:
             st.info("👆 Run an analysis to see autonomous visualizations")
             
@@ -1968,9 +2510,12 @@ def main():
             - 📦 **Box Plots** - For distribution comparisons across groups
             - 📊 **Histograms** - For frequency distributions
             - 🔥 **Heatmaps** - For correlation matrices
+            - 🎻 **Violin Plots** - For detailed distribution shapes
             - 📊 **KPI Cards** - For metric summaries
             
             **All selections are made automatically based on data characteristics!**
+            
+            You can also **manually override** any visualization with a different chart type.
             """)
     
     # ========================================================================
