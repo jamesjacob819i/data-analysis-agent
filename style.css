@@ -1,0 +1,38 @@
+/* Inject modern Glassmorphism and modern colors */
+.stApp {
+    background: linear-gradient(135deg, #0e1117 0%, #161b22 100%);
+}
+
+.stButton > button {
+    border-radius: 8px;
+    background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%);
+    border: none;
+    color: white;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+.stTextInput > div > div > input {
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255,255,255,0.05);
+}
+
+div[data-testid="stSidebar"] {
+    background: rgba(22, 27, 34, 0.7);
+    backdrop-filter: blur(10px);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+div[data-testid="stMetricValue"] {
+    font-size: 2rem;
+    font-weight: 700;
+    background: -webkit-linear-gradient(45deg, #3b82f6, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}

@@ -329,8 +329,8 @@ class SelfHealingAgent:
             # 4. Handle outliers
             df_clean = self._handle_outliers(df_clean)
             
-            # 5. Remove zero-variance columns
-            df_clean = self._remove_zero_variance(df_clean)
+            # 5. Remove unnecessary columns (zero-variance, identifiers, largely empty)
+            df_clean = self._prune_unnecessary_columns(df_clean)
             
             # 6. Validate data integrity
             df_clean = self._validate_data_integrity(df_clean)
@@ -656,19 +656,33 @@ class SelfHealingAgent:
         except Exception as e:
             pass
     
-    def _remove_zero_variance(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Remove columns with zero variance"""
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
+    def _prune_unnecessary_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Remove columns with zero variance, high missingness, or unique identifiers"""
         cols_to_drop = []
         
-        for col in numeric_cols:
-            if df[col].std() == 0:
+        for col in df.columns:
+            # 1. High Missingness (>90%)
+            missing_pct = df[col].isnull().sum() / len(df)
+            if missing_pct > 0.90:
                 cols_to_drop.append(col)
-        
+                self.fixes_applied.append(f"✅ Dropped '{col}' heavily missing ({missing_pct:.0%} null)")
+                continue
+                
+            # 2. Zero variance
+            if df[col].nunique() <= 1:
+                cols_to_drop.append(col)
+                self.fixes_applied.append(f"✅ Dropped '{col}' (no variance / constant value)")
+                continue
+                
+            # 3. Text Identifiers (All Unique values string categories, e.g., ID columns)
+            if df[col].dtype == object and df[col].nunique() == len(df):
+                cols_to_drop.append(col)
+                self.fixes_applied.append(f"✅ Dropped '{col}' (identified as pure text identifier/index)")
+                continue
+
         if cols_to_drop:
             df = df.drop(columns=cols_to_drop)
-            self.fixes_applied.append(f"✅ Removed {len(cols_to_drop)} zero-variance columns: {cols_to_drop}")
-        
+            
         return df
 
 # ============================================================================
@@ -1135,6 +1149,7 @@ class AnalysisAgent:
             'descriptive_stats': self._descriptive_statistics(df),
             'hypothesis_tests': self._test_hypotheses(df, hypotheses),
             'correlations': self._correlation_analysis(df),
+            'anomalies': self._detect_anomalies(df),
             'summary': {}
         }
         
@@ -1188,6 +1203,32 @@ class AnalysisAgent:
             corr_matrix = df[numeric_cols].corr()
             return corr_matrix.to_dict()
         return {}
+        
+    def _detect_anomalies(self, df: pd.DataFrame) -> List[Dict]:
+        """Detect statistical anomalies using Z-score method"""
+        anomalies = []
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        
+        for col in numeric_cols:
+            if df[col].std() > 0:
+                z_scores = np.abs(stats.zscore(df[col].dropna()))
+                # Find indices where z-score > 3
+                outlier_indices = np.where(z_scores > 3)[0]
+                
+                if len(outlier_indices) > 0:
+                    # Map back to original dataframe indices
+                    valid_idx = df[col].dropna().index
+                    original_indices = valid_idx[outlier_indices]
+                    outlier_values = df.loc[original_indices, col].values
+                    
+                    anomalies.append({
+                        'column': col,
+                        'count': len(outlier_indices),
+                        'max_deviation': float(np.max(z_scores[outlier_indices])),
+                        'example_values': [float(v) for v in outlier_values[:3]]
+                    })
+                    
+        return anomalies
 
 # ============================================================================
 # AGENT 6: VISUALIZATION AGENT (ENHANCED)
@@ -1783,11 +1824,127 @@ def main():
     st.set_page_config(
         page_title="🤖 Autonomous Data Analysis System",
         page_icon="🤖",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="expanded",
     )
     
-    st.title("🤖 Autonomous Data Analysis System")
-    st.markdown("### Council of Intelligent Agents - No External AI Models")
+    # --- MODERN SLEEK UI INJECTION ---
+    # Top-tier Designer UI: Glassmorphism, Google Fonts, and Vibrant Dark-Mode 
+    st.markdown("""
+        <style>
+        /* Import Inter Font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+
+        /* Global App Background */
+        .stApp {
+            background: radial-gradient(circle at bottom right, #111827, #0B0F19);
+            font-family: 'Inter', sans-serif;
+            color: #d1d5db;
+        }
+
+        /* Titles and Headers */
+        h1, h2, h3 {
+            color: #f3f4f6;
+            font-weight: 800;
+        }
+        
+        .stMarkdown h1 {
+            background: -webkit-linear-gradient(45deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 3rem;
+            margin-bottom: -1rem;
+        }
+
+        /* Sleek Sidebar */
+        [data-testid="stSidebar"] {
+            background: rgba(17, 24, 39, 0.65) !important;
+            backdrop-filter: blur(15px);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Premium Buttons */
+        .stButton > button {
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            color: white;
+            font-weight: 600;
+            border-radius: 8px;
+            border: none;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .stButton > button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.4);
+            background: linear-gradient(135deg, #2563eb, #4f46e5);
+        }
+
+        /* Inputs & Select Boxes */
+        .stTextInput input, .stSelectbox > div > div {
+            background: rgba(31, 41, 55, 0.5) !important;
+            border-radius: 8px !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: white !important;
+        }
+        
+        .stTextInput input:focus, .stSelectbox > div > div:focus {
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
+        }
+
+        /* High-Impact Metrics */
+        [data-testid="stMetricValue"] {
+            font-size: 2.25rem !important;
+            font-weight: 800 !important;
+            background: -webkit-linear-gradient(45deg, #60A5FA, #C084FC);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Expanders and Containers */
+        .streamlit-expanderHeader {
+            background: rgba(31, 41, 55, 0.4) !important;
+            border-radius: 8px !important;
+            border: 1px solid rgba(255,255,255,0.05) !important;
+            transition: 0.3s;
+        }
+        
+        .streamlit-expanderHeader:hover {
+            background: rgba(31, 41, 55, 0.6) !important;
+        }
+        
+        /* Tabs styling */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 8px;
+            background-color: transparent;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            background: rgba(31, 41, 55, 0.3);
+            border-radius: 8px 8px 0 0;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: none;
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+        
+        .stTabs [aria-selected="true"] {
+            background: rgba(31, 41, 55, 0.8);
+            border-top: 2px solid #3b82f6;
+        }
+
+        /* Toast / Notifications */
+        .stAlert {
+            border-radius: 8px !important;
+            border: none !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    # -------------------------------
+    
+    st.markdown("<h1>🤖 Autonomous Data Analysis System</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='color:#9ca3af; font-size:1.1rem; margin-top:-10px; margin-bottom:2rem;'>Council of Intelligent Agents - No External AI Models</p>", unsafe_allow_html=True)
     
     # Initialize logger
     logger = AgentLogger()
@@ -1974,6 +2131,9 @@ def main():
                 
                 st.markdown("---")
                 
+                # Checkbox for Auto-Derivation during sequence
+                auto_derive = st.checkbox("🔮 Automatically derive missing result fields (Top 2 suggestions)", value=True, help="Agent will autonomously figure out missing fields like 'revenue' or 'profit' from the dataset and generate them.")
+                
                 if st.button("🚀 Run Autonomous Analysis", type="primary"):
                     if selected_columns:
                         df_analysis = df[selected_columns].copy()
@@ -1989,9 +2149,19 @@ def main():
                                 validation_report = ingestion_agent.validate_data(df_analysis)
                                 
                                 # Self-Healing Agent with progress indicator
-                                with st.spinner("🔧 Self-Healing Agent: Fixing data types and quality issues..."):
+                                with st.spinner("🔧 Self-Healing Agent: Fixing data types and dropping unnecessary fields..."):
                                     healing_agent = SelfHealingAgent(logger)
                                     df_clean = healing_agent.heal_data(df_analysis)
+                                    
+                                # Auto-Derive Result Fields immediately after clean
+                                if auto_derive:
+                                    field_gen_agent = FieldGenerationAgent(logger)
+                                    suggestions = field_gen_agent.suggest_derivable_fields(df_clean)
+                                    st.session_state['auto_derived_logs'] = []
+                                    if suggestions:
+                                        for sug in suggestions[:2]: # Top 2 highly confident derivations
+                                            df_clean = field_gen_agent.generate_field(df_clean, sug['name'], sug['type'])
+                                            st.session_state['auto_derived_logs'].append(f"Autonomous Field Created: '{sug['name']}' ({sug['type']})")
                                 
                                 # Store issues and fixes
                                 st.session_state['issues'] = ingestion_agent.issues_detected
@@ -2064,8 +2234,37 @@ def main():
                                 st.success(fix)
                             if len(st.session_state.get('fixes', [])) > 10:
                                 st.info(f"... and {len(st.session_state['fixes']) - 10} more fixes")
+                        st.info("No fixes needed")
+                        
+                    # Show Auto-Derived Fields if applicable
+                    if st.session_state.get('auto_derived_logs'):
+                         st.markdown("---")
+                         st.subheader("🔮 Autonomously Derived Fields")
+                         st.markdown("The Field-Generation Agent derived and auto-attached missing components:")
+                         
+                         cols = st.columns(min(len(st.session_state['auto_derived_logs']), 4))
+                         for i, log in enumerate(st.session_state['auto_derived_logs']):
+                             with cols[i % len(cols)]:
+                                 st.success(f"{log}")
+                                 
+                    # Show Anomalies Detected
+                    if st.session_state.get('analysis_results', {}).get('anomalies'):
+                        st.markdown("---")
+                        st.subheader("🚨 Statistical Anomalies Detected")
+                        
+                        anomalies = st.session_state['analysis_results']['anomalies']
+                        
+                        if anomalies:
+                            st.warning(f"Found unusually high deviations (Z-score > 3) in {len(anomalies)} variables.")
+                            cols = st.columns(min(3, len(anomalies)))
+                            for idx, anomaly in enumerate(anomalies):
+                                with cols[idx % len(cols)]:
+                                    with st.expander(f"**{anomaly['column']}** ({anomaly['count']} outlines)", expanded=True):
+                                        st.metric("Max Deviation", f"{anomaly['max_deviation']:.1f}σ")
+                                        st.caption("Extreme Values Example:")
+                                        st.code(str(anomaly['example_values']))
                         else:
-                            st.info("No fixes needed")
+                            st.success("✅ No extreme statistical anomalies detected in numeric columns.")
                     
                     # Show data type summary
                     if 'df_clean' in st.session_state:
@@ -2119,81 +2318,136 @@ def main():
                                     else:
                                         st.info("ℹ️ Not statistically significant")
                     
+                    if 'df_clean' in st.session_state:
+                        st.markdown("---")
+                        st.subheader("🔍 Advanced Data Filtering")
+                        st.markdown("Filter your dataset dynamically. Changes apply to comparisons and visualizations built from `df_filtered`.")
+                        
+                        df_master = st.session_state['df_clean']
+                        
+                        # Initialize filtered dataframe
+                        if 'df_filtered' not in st.session_state:
+                            st.session_state['df_filtered'] = df_master.copy()
+                            
+                        with st.expander("⚙️ Set Global Data Filters", expanded=True):
+                            cat_cols = df_master.select_dtypes(include=['object', 'category']).columns.tolist()
+                            num_cols = df_master.select_dtypes(include=[np.number]).columns.tolist()
+                            
+                            f_col1, f_col2 = st.columns(2)
+                            
+                            filter_query = ""
+                            
+                            with f_col1:
+                                if cat_cols:
+                                    selected_cat_filter = st.selectbox("Filter by Category Column:", ["None"] + cat_cols)
+                                    if selected_cat_filter != "None":
+                                        unique_vals = df_master[selected_cat_filter].dropna().unique()
+                                        selected_vals = st.multiselect(f"Select values for {selected_cat_filter}", unique_vals, default=unique_vals)
+                                        if selected_vals:
+                                            # Apply filter natively
+                                            st.session_state['df_filtered'] = df_master[df_master[selected_cat_filter].isin(selected_vals)]
+                                else:
+                                    st.info("No categorical columns available for filtering.")
+                                    
+                            with f_col2:
+                                if num_cols:
+                                    selected_num_filter = st.selectbox("Filter by Numeric Column:", ["None"] + num_cols)
+                                    if selected_num_filter != "None":
+                                        min_val = float(df_master[selected_num_filter].min())
+                                        max_val = float(df_master[selected_num_filter].max())
+                                        if min_val < max_val:
+                                            selected_range = st.slider(f"Select range for {selected_num_filter}", min_val, max_val, (min_val, max_val))
+                                            # Apply recursive filter
+                                            df_curr = st.session_state.get('df_filtered', df_master)
+                                            st.session_state['df_filtered'] = df_curr[
+                                                (df_curr[selected_num_filter] >= selected_range[0]) & 
+                                                (df_curr[selected_num_filter] <= selected_range[1])
+                                            ]
+                                        else:
+                                            st.info(f"Column {selected_num_filter} has constant value.")
+                                            
+                            if st.button("🔄 Reset Filters"):
+                                st.session_state['df_filtered'] = df_master.copy()
+                                st.rerun()
+                                
+                        df_compare = st.session_state.get('df_filtered', df_master)
+                        st.success(f"Currently analyzing {len(df_compare)} rows (Filtered from {len(df_master)} total rows)")
+
                     st.markdown("---")
                     st.subheader("🔄 Dynamic Field Comparison")
                     
-                    if 'df_clean' in st.session_state:
-                        df_compare = st.session_state['df_clean']
-                        # Include categorical or object strings that aren't overly broad (e.g. limit to unique values if needed, or just all columns)
-                        # We will allow all columns that do not start with '_'
-                        available_cols = [c for c in df_compare.columns if not c.startswith('_')]
-                        
-                        if len(available_cols) >= 2:
-                            st.markdown("**Compare any two variables dynamically:**")
-                            
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                var1 = st.selectbox("First variable:", available_cols, key="compare_var1")
-                            with col2:
-                                var2 = st.selectbox("Second variable:", 
-                                                   [col for col in available_cols if col != var1], 
-                                                   key="compare_var2")
-                            with col3:
-                                comparison_type = st.selectbox("Comparison type:", 
-                                                              ["Scatter Plot", "Line Comparison", "Distribution Compare"],
-                                                              key="compare_type")
-                            
-                            with st.spinner("Creating comparison visualization..."):
-                                is_var1_numeric = pd.api.types.is_numeric_dtype(df_compare[var1])
-                                is_var2_numeric = pd.api.types.is_numeric_dtype(df_compare[var2])
-                                
-                                if comparison_type == "Scatter Plot":
-                                    # Only add trendline if both variables are numeric and statsmodels is available
-                                    use_trendline = "ols" if (is_var1_numeric and is_var2_numeric and HAS_STATSMODELS) else None
-                                    
-                                    fig = px.scatter(df_compare, x=var1, y=var2, 
-                                                   title=f"Relationship: {var1} vs {var2}",
-                                                   trendline=use_trendline)
-                                    st.plotly_chart(fig, use_container_width=True)
-                                    
-                                    # Calculate correlation only if both are numeric
-                                    if is_var1_numeric and is_var2_numeric:
-                                        corr = df_compare[var1].corr(df_compare[var2])
-                                        st.info(f"📈 Correlation coefficient: {corr:.3f}")
-                                    else:
-                                        st.info("ℹ️ Correlation coefficient skipped (requires numeric data for both variables)")
-                                        
-                                elif comparison_type == "Line Comparison":
-                                    fig = go.Figure()
-                                    # Support sorting if one variable is categorical/date acting as 'x'
-                                    fig.add_trace(go.Scatter(y=df_compare[var1], name=var1, 
-                                                           line=dict(color='blue')))
-                                    fig.add_trace(go.Scatter(y=df_compare[var2], name=var2, 
-                                                           line=dict(color='red')))
-                                    fig.update_layout(title=f"Trend Comparison: {var1} vs {var2}")
-                                    st.plotly_chart(fig, use_container_width=True)
-                                    
-                                elif comparison_type == "Distribution Compare":
-                                    fig = go.Figure()
-                                    fig.add_trace(go.Histogram(x=df_compare[var1], name=var1, 
-                                                             opacity=0.7))
-                                    fig.add_trace(go.Histogram(x=df_compare[var2], name=var2, 
-                                                             opacity=0.7))
-                                    fig.update_layout(title=f"Distribution: {var1} vs {var2}",
-                                                    barmode='overlay')
-                                    st.plotly_chart(fig, use_container_width=True)
-                                    
-                                    # Statistical comparison only if numeric
-                                    if is_var1_numeric and is_var2_numeric:
-                                        stat, p_val = stats.ttest_ind(df_compare[var1].dropna(), 
-                                                                      df_compare[var2].dropna())
-                                        st.info(f"📊 T-test p-value: {p_val:.4f} - " + 
-                                               ("Significantly different" if p_val < 0.05 else "Not significantly different"))
-                                    else:
-                                        st.info("ℹ️ T-test skipped (requires numeric data for both variables)")
-    
-    # ========================================================================
-    # STOCK ANALYSIS MODE
+                    if 'df_filtered' in st.session_state:
+                         df_compare = st.session_state['df_filtered']
+                         # Include categorical or object strings that aren't overly broad (e.g. limit to unique values if needed, or just all columns)
+                         # We will allow all columns that do not start with '_'
+                         available_cols = [c for c in df_compare.columns if not c.startswith('_')]
+                         
+                         if len(available_cols) >= 2:
+                             st.markdown("**Compare any two variables dynamically:**")
+                             
+                             col1, col2, col3 = st.columns(3)
+                             with col1:
+                                 var1 = st.selectbox("First variable:", available_cols, key="compare_var1")
+                             with col2:
+                                 var2 = st.selectbox("Second variable:", 
+                                                    [col for col in available_cols if col != var1], 
+                                                    key="compare_var2")
+                             with col3:
+                                 comparison_type = st.selectbox("Comparison type:", 
+                                                               ["Scatter Plot", "Line Comparison", "Distribution Compare"],
+                                                               key="compare_type")
+                             
+                             with st.spinner("Creating comparison visualization..."):
+                                 is_var1_numeric = pd.api.types.is_numeric_dtype(df_compare[var1])
+                                 is_var2_numeric = pd.api.types.is_numeric_dtype(df_compare[var2])
+                                 
+                                 if comparison_type == "Scatter Plot":
+                                     # Only add trendline if both variables are numeric and statsmodels is available
+                                     use_trendline = "ols" if (is_var1_numeric and is_var2_numeric and HAS_STATSMODELS) else None
+                                     
+                                     fig = px.scatter(df_compare, x=var1, y=var2, 
+                                                    title=f"Relationship: {var1} vs {var2}",
+                                                    trendline=use_trendline)
+                                     st.plotly_chart(fig, use_container_width=True)
+                                     
+                                     # Calculate correlation only if both are numeric
+                                     if is_var1_numeric and is_var2_numeric:
+                                         corr = df_compare[var1].corr(df_compare[var2])
+                                         st.info(f"📈 Correlation coefficient: {corr:.3f}")
+                                     else:
+                                         st.info("ℹ️ Correlation coefficient skipped (requires numeric data for both variables)")
+                                         
+                                 elif comparison_type == "Line Comparison":
+                                     fig = go.Figure()
+                                     # Support sorting if one variable is categorical/date acting as 'x'
+                                     fig.add_trace(go.Scatter(y=df_compare[var1], name=var1, 
+                                                            line=dict(color='blue')))
+                                     fig.add_trace(go.Scatter(y=df_compare[var2], name=var2, 
+                                                            line=dict(color='red')))
+                                     fig.update_layout(title=f"Trend Comparison: {var1} vs {var2}")
+                                     st.plotly_chart(fig, use_container_width=True)
+                                     
+                                 elif comparison_type == "Distribution Compare":
+                                     fig = go.Figure()
+                                     fig.add_trace(go.Histogram(x=df_compare[var1], name=var1, 
+                                                              opacity=0.7))
+                                     fig.add_trace(go.Histogram(x=df_compare[var2], name=var2, 
+                                                              opacity=0.7))
+                                     fig.update_layout(title=f"Distribution: {var1} vs {var2}",
+                                                     barmode='overlay')
+                                     st.plotly_chart(fig, use_container_width=True)
+                                     
+                                     # Statistical comparison only if numeric
+                                     if is_var1_numeric and is_var2_numeric:
+                                         stat, p_val = stats.ttest_ind(df_compare[var1].dropna(), 
+                                                                       df_compare[var2].dropna())
+                                         st.info(f"📊 T-test p-value: {p_val:.4f} - " + 
+                                                ("Significantly different" if p_val < 0.05 else "Not significantly different"))
+                                     else:
+                                         st.info("ℹ️ T-test skipped (requires numeric data for both variables)")
+     
+     # ========================================================================
+     # STOCK ANALYSIS MODE
     # ========================================================================
     
     elif analysis_mode == "📈 Stock Analysis":
@@ -2468,8 +2722,13 @@ def main():
                         st.checkbox("Enable manual chart override", key=override_key)
                         
                         if st.session_state.get(override_key, False):
-                            if 'df_clean' in st.session_state:
+                            # Use filtered df if available
+                            if 'df_filtered' in st.session_state:
+                                df_for_override = st.session_state['df_filtered']
+                            elif 'df_clean' in st.session_state:
                                 df_for_override = st.session_state['df_clean']
+                                
+                            if 'df_for_override' in locals():
                                 all_cols = [c for c in df_for_override.columns if not c.startswith('_')]
                                 x_col_override = st.selectbox("X-axis variable:", all_cols, key=f"x_override_{i}")
                                 
@@ -2485,9 +2744,13 @@ def main():
                                 
                             if st.button("📊 Generate Override", key=f"gen_override_{i}"):
                                 if viz_agent and x_col_override:
-                                    df_for_override = st.session_state.get('df_clean', pd.DataFrame())
+                                    if 'df_filtered' in st.session_state:
+                                        df_active = st.session_state['df_filtered']
+                                    else:
+                                        df_active = st.session_state.get('df_clean', pd.DataFrame())
+                                        
                                     custom_viz = viz_agent.create_custom_visualization(
-                                        df_for_override, x_col_override, y_col_override, chart_type_override
+                                        df_active, x_col_override, y_col_override, chart_type_override
                                     )
                                     if custom_viz:
                                         viz = custom_viz # Replace locally to render the manual chart
