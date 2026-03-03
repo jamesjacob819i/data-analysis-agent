@@ -36,3 +36,54 @@ div[data-testid="stMetricValue"] {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
+/* Font Awesome Icons */
+.icon-large {
+    font-size: 1.8rem;
+    margin-right: 0.7rem;
+    color: #3b82f6;
+    vertical-align: middle;
+}
+
+.icon-medium {
+    font-size: 1.3rem;
+    margin-right: 0.5rem;
+    color: #60a5fa;
+    vertical-align: middle;
+}
+
+.icon-small {
+    font-size: 1rem;
+    margin-right: 0.4rem;
+    color: #93c5fd;
+    vertical-align: middle;
+}
+
+.icon-success {
+    color: #10b981 !important;
+}
+
+.icon-warning {
+    color: #f59e0b !important;
+}
+
+.icon-error {
+    color: #ef4444 !important;
+}
+
+.icon-info {
+    color: #3b82f6 !important;
+}
+
+.icon-primary {
+    color: #6366f1 !important;
+}
+
+/* Icon animation */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.fa-spin {
+    animation: spin 2s linear infinite;
+}

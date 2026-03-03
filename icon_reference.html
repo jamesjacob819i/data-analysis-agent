@@ -1,0 +1,342 @@
+<!-- Icon Pack Reference - Font Awesome 6.4.0 -->
+<!-- Save this as a reference or view in a browser -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Font Awesome Icons Used in Data Analysis App</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0e1117 0%, #161b22 100%);
+            color: #d1d5db;
+            padding: 40px 20px;
+            margin: 0;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            background: -webkit-linear-gradient(45deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .icon-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        
+        .icon-card {
+            background: rgba(31, 41, 55, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .icon-card:hover {
+            background: rgba(31, 41, 55, 0.6);
+            border-color: rgba(59, 130, 246, 0.3);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+        }
+        
+        .icon-display {
+            font-size: 3rem;
+            color: #3b82f6;
+            margin-bottom: 12px;
+        }
+        
+        .icon-name {
+            font-weight: 600;
+            color: #f3f4f6;
+            margin-bottom: 4px;
+            word-break: break-word;
+        }
+        
+        .icon-code {
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            color: #9ca3af;
+            word-break: break-all;
+        }
+        
+        .usage {
+            color: #6b7280;
+            font-size: 0.875rem;
+            margin-top: 6px;
+            font-style: italic;
+        }
+        
+        .category {
+            margin-bottom: 50px;
+        }
+        
+        .category-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #60a5fa;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid rgba(96, 165, 250, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><i class="fas fa-robot"></i> Font Awesome Icon Pack Reference</h1>
+        <p style="text-align: center; color: #9ca3af;">Icons used in the Autonomous Data Analysis System</p>
+        
+        <div class="category">
+            <h2 class="category-title"><i class="fas fa-home"></i> Navigation & Headers</h2>
+            <div class="icon-grid">
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-robot"></i></div>
+                    <div class="icon-name">robot</div>
+                    <div class="icon-code">fas fa-robot</div>
+                    <div class="usage">App title, agent status</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-cog"></i></div>
+                    <div class="icon-name">settings</div>
+                    <div class="icon-code">fas fa-cog</div>
+                    <div class="usage">Control panel, config</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-brain"></i></div>
+                    <div class="icon-name">brain</div>
+                    <div class="icon-code">fas fa-brain</div>
+                    <div class="usage">Agent logs, thinking</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="category">
+            <h2 class="category-title"><i class="fas fa-chart-bar"></i> Charts & Analysis</h2>
+            <div class="icon-grid">
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-chart-bar"></i></div>
+                    <div class="icon-name">chart</div>
+                    <div class="icon-code">fas fa-chart-bar</div>
+                    <div class="usage">Report analysis, bar charts</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-chart-line"></i></div>
+                    <div class="icon-name">chart-line</div>
+                    <div class="icon-code">fas fa-chart-line</div>
+                    <div class="usage">Stock analysis, trends</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-chart-area"></i></div>
+                    <div class="icon-name">area-chart</div>
+                    <div class="icon-code">fas fa-chart-area</div>
+                    <div class="usage">Area visualizations</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-chart-pie"></i></div>
+                    <div class="icon-name">pie-chart</div>
+                    <div class="icon-code">fas fa-chart-pie</div>
+                    <div class="usage">Pie charts, distributions</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="category">
+            <h2 class="category-title"><i class="fas fa-file-upload"></i> File & Data Operations</h2>
+            <div class="icon-grid">
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-file-upload"></i></div>
+                    <div class="icon-name">upload</div>
+                    <div class="icon-code">fas fa-file-upload</div>
+                    <div class="usage">Upload data</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-table"></i></div>
+                    <div class="icon-name">table</div>
+                    <div class="icon-code">fas fa-table</div>
+                    <div class="usage">Multi-sheet selection</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-database"></i></div>
+                    <div class="icon-name">database</div>
+                    <div class="icon-code">fas fa-database</div>
+                    <div class="usage">Data storage, operations</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-file"></i></div>
+                    <div class="icon-name">file</div>
+                    <div class="icon-code">fas fa-file</div>
+                    <div class="usage">File operations</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="category">
+            <h2 class="category-title"><i class="fas fa-rocket"></i> Actions & Controls</h2>
+            <div class="icon-grid">
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-rocket"></i></div>
+                    <div class="icon-name">rocket</div>
+                    <div class="icon-code">fas fa-rocket</div>
+                    <div class="usage">Run analysis, launch</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-wand-magic-sparkles"></i></div>
+                    <div class="icon-name">magic</div>
+                    <div class="icon-code">fas fa-wand-magic-sparkles</div>
+                    <div class="usage">Auto-generate fields</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-sync-alt"></i></div>
+                    <div class="icon-name">refresh</div>
+                    <div class="icon-code">fas fa-sync-alt</div>
+                    <div class="usage">Refresh, reload</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-trash"></i></div>
+                    <div class="icon-name">trash</div>
+                    <div class="icon-code">fas fa-trash</div>
+                    <div class="usage">Clear, delete</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="category">
+            <h2 class="category-title"><i class="fas fa-search"></i> Search & Filter</h2>
+            <div class="icon-grid">
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-search"></i></div>
+                    <div class="icon-name">search</div>
+                    <div class="icon-code">fas fa-search</div>
+                    <div class="usage">Search, find</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-filter"></i></div>
+                    <div class="icon-name">filter</div>
+                    <div class="icon-code">fas fa-filter</div>
+                    <div class="usage">Filter data</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-arrows-alt-h"></i></div>
+                    <div class="icon-name">exchange</div>
+                    <div class="icon-code">fas fa-arrows-alt-h</div>
+                    <div class="usage">Compare, exchange</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-target"></i></div>
+                    <div class="icon-name">target</div>
+                    <div class="icon-code">fas fa-target</div>
+                    <div class="usage">Target, focus</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="category">
+            <h2 class="category-title"><i class="fas fa-check-circle"></i> Status & Feedback</h2>
+            <div class="icon-grid">
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-check-circle" style="color: #10b981;"></i></div>
+                    <div class="icon-name">check</div>
+                    <div class="icon-code">fas fa-check-circle</div>
+                    <div class="usage">Success, active</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-exclamation-triangle" style="color: #f59e0b;"></i></div>
+                    <div class="icon-name">warning</div>
+                    <div class="icon-code">fas fa-exclamation-triangle</div>
+                    <div class="usage">Alert, caution</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-times-circle" style="color: #ef4444;"></i></div>
+                    <div class="icon-name">error</div>
+                    <div class="icon-code">fas fa-times-circle</div>
+                    <div class="usage">Error, failed</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-info-circle" style="color: #3b82f6;"></i></div>
+                    <div class="icon-name">info</div>
+                    <div class="icon-code">fas fa-info-circle</div>
+                    <div class="usage">Information, tip</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="category">
+            <h2 class="category-title"><i class="fas fa-cog"></i> Utilities & UI Elements</h2>
+            <div class="icon-grid">
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-plus-circle"></i></div>
+                    <div class="icon-name">plus</div>
+                    <div class="icon-code">fas fa-plus-circle</div>
+                    <div class="usage">Add, create</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-download"></i></div>
+                    <div class="icon-name">download</div>
+                    <div class="icon-code">fas fa-download</div>
+                    <div class="usage">Download, export</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-share"></i></div>
+                    <div class="icon-name">share</div>
+                    <div class="icon-code">fas fa-share</div>
+                    <div class="usage">Share, distribute</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-copy"></i></div>
+                    <div class="icon-name">copy</div>
+                    <div class="icon-code">fas fa-copy</div>
+                    <div class="usage">Copy, duplicate</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-edit"></i></div>
+                    <div class="icon-name">edit</div>
+                    <div class="icon-code">fas fa-edit</div>
+                    <div class="usage">Edit, modify</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-eye"></i></div>
+                    <div class="icon-name">eye</div>
+                    <div class="icon-code">fas fa-eye</div>
+                    <div class="usage">View, show</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-lock"></i></div>
+                    <div class="icon-name">lock</div>
+                    <div class="icon-code">fas fa-lock</div>
+                    <div class="usage">Security, locked</div>
+                </div>
+                <div class="icon-card">
+                    <div class="icon-display"><i class="fas fa-star"></i></div>
+                    <div class="icon-name">star</div>
+                    <div class="icon-code">fas fa-star</div>
+                    <div class="usage">Favorite, important</div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="background: rgba(31, 41, 55, 0.4); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 20px; margin-top: 40px;">
+            <h3 style="color: #60a5fa; margin-top: 0;">📚 Reference Information</h3>
+            <p><strong>Icon Pack:</strong> Font Awesome 6.4.0</p>
+            <p><strong>CDN Source:</strong> https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css</p>
+            <p><strong>License:</strong> CC BY 4.0 (Free for use)</p>
+            <p><strong>Total Icons Available:</strong> 2000+ free icons</p>
+            <p><strong>Implementation:</strong> Created IconSystem class in Python for easy integration</p>
+            <p style="margin-bottom: 0;"><strong>Usage:</strong> <code>IconSystem.icon('robot', 'large')</code> or <code>IconSystem.text('rocket', 'Run Analysis')</code></p>
+        </div>
+    </div>
+</body>
+</html>

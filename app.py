@@ -37,8 +37,82 @@ except ImportError:
     HAS_STATSMODELS = False
 
 # ============================================================================
-# LOGGING SYSTEM - Agent Thinking Transparency
+# ICON SYSTEM - Font Awesome Icons
 # ============================================================================
+
+class IconSystem:
+    """Font Awesome icon system for enhanced UI"""
+    
+    # Icon mappings
+    ICONS = {
+        'robot': '<i class="fas fa-robot"></i>',
+        'chart': '<i class="fas fa-chart-bar"></i>',
+        'chart-line': '<i class="fas fa-chart-line"></i>',
+        'target': '<i class="fas fa-target"></i>',
+        'refresh': '<i class="fas fa-sync-alt"></i>',
+        'check': '<i class="fas fa-check-circle"></i>',
+        'warning': '<i class="fas fa-exclamation-triangle"></i>',
+        'error': '<i class="fas fa-times-circle"></i>',
+        'info': '<i class="fas fa-info-circle"></i>',
+        'trash': '<i class="fas fa-trash"></i>',
+        'settings': '<i class="fas fa-cog"></i>',
+        'upload': '<i class="fas fa-file-upload"></i>',
+        'table': '<i class="fas fa-table"></i>',
+        'plus': '<i class="fas fa-plus-circle"></i>',
+        'magic': '<i class="fas fa-wand-magic-sparkles"></i>',
+        'rocket': '<i class="fas fa-rocket"></i>',
+        'search': '<i class="fas fa-search"></i>',
+        'filter': '<i class="fas fa-filter"></i>',
+        'exchange': '<i class="fas fa-arrows-alt-h"></i>',
+        'brain': '<i class="fas fa-brain"></i>',
+        'eye': '<i class="fas fa-eye"></i>',
+        'heart': '<i class="fas fa-heart"></i>',
+        'home': '<i class="fas fa-home"></i>',
+        'file': '<i class="fas fa-file"></i>',
+        'folder': '<i class="fas fa-folder"></i>',
+        'database': '<i class="fas fa-database"></i>',
+        'lock': '<i class="fas fa-lock"></i>',
+        'unlock': '<i class="fas fa-unlock"></i>',
+        'user': '<i class="fas fa-user"></i>',
+        'users': '<i class="fas fa-users"></i>',
+        'code': '<i class="fas fa-code"></i>',
+        'bar-chart': '<i class="fas fa-chart-column"></i>',
+        'stock': '<i class="fas fa-chart-line"></i>',
+        'trend': '<i class="fas fa-arrow-trend-up"></i>',
+        'data': '<i class="fas fa-database"></i>',
+        'microchip': '<i class="fas fa-microchip"></i>',
+        'bolt': '<i class="fas fa-bolt"></i>',
+        'fire': '<i class="fas fa-fire"></i>',
+        'star': '<i class="fas fa-star"></i>',
+        'bookmark': '<i class="fas fa-bookmark"></i>',
+        'download': '<i class="fas fa-download"></i>',
+        'share': '<i class="fas fa-share"></i>',
+        'copy': '<i class="fas fa-copy"></i>',
+        'edit': '<i class="fas fa-edit"></i>',
+        'bars': '<i class="fas fa-bars"></i>',
+        'times': '<i class="fas fa-times"></i>',
+        'gear': '<i class="fas fa-gear"></i>',
+        'spinner': '<i class="fas fa-spinner fa-spin"></i>',
+        'percentage': '<i class="fas fa-percent"></i>',
+        'area-chart': '<i class="fas fa-chart-area"></i>',
+        'pie-chart': '<i class="fas fa-chart-pie"></i>',
+        'project-diagram': '<i class="fas fa-project-diagram"></i>',
+    }
+    
+    @staticmethod
+    def icon(name: str, size: str = "medium") -> str:
+        """Get Font Awesome icon HTML with styling"""
+        icon_html = IconSystem.ICONS.get(name, '<i class="fas fa-circle-question"></i>')
+        css_class = f"icon-{size}"
+        return f'<span class="{css_class}">{icon_html}</span>'
+    
+    @staticmethod
+    def text(icon_name: str, text: str, size: str = "medium") -> str:
+        """Get icon with text as markdown"""
+        icon_html = IconSystem.icon(icon_name, size)
+        return f'{icon_html} {text}'
+
+
 
 class AgentLogger:
     """Centralized logging system to track agent reasoning"""
@@ -1822,15 +1896,18 @@ class StockAnalysisAgent:
 
 def main():
     st.set_page_config(
-        page_title="🤖 Autonomous Data Analysis System",
-        page_icon="🤖",
+        page_title="Autonomous Data Analysis System",
+        page_icon="⚙️",
         layout="wide",
         initial_sidebar_state="expanded",
     )
     
     # --- MODERN SLEEK UI INJECTION ---
-    # Top-tier Designer UI: Glassmorphism, Google Fonts, and Vibrant Dark-Mode 
+    # Top-tier Designer UI: Glassmorphism, Google Fonts, Font Awesome Icons, and Vibrant Dark-Mode 
     st.markdown("""
+        <!-- Font Awesome Icons -->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        
         <style>
         /* Import Inter Font */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
@@ -1939,11 +2016,37 @@ def main():
             border-radius: 8px !important;
             border: none !important;
         }
+        
+        /* Font Awesome Icons Styling */
+        .icon-large {
+            font-size: 1.5rem;
+            margin-right: 0.5rem;
+            color: #3b82f6;
+        }
+        
+        .icon-medium {
+            font-size: 1.2rem;
+            margin-right: 0.4rem;
+            color: #60a5fa;
+        }
+        
+        .icon-small {
+            font-size: 0.9rem;
+            margin-right: 0.3rem;
+            color: #93c5fd;
+        }
+        
+        /* Icon colors by category */
+        .icon-success { color: #10b981; }
+        .icon-warning { color: #f59e0b; }
+        .icon-error { color: #ef4444; }
+        .icon-info { color: #3b82f6; }
+        .icon-primary { color: #6366f1; }
         </style>
     """, unsafe_allow_html=True)
     # -------------------------------
     
-    st.markdown("<h1>🤖 Autonomous Data Analysis System</h1>", unsafe_allow_html=True)
+    st.markdown("<h1>" + IconSystem.icon('robot', 'large') + " Autonomous Data Analysis System</h1>", unsafe_allow_html=True)
     st.markdown("<p style='color:#9ca3af; font-size:1.1rem; margin-top:-10px; margin-bottom:2rem;'>Council of Intelligent Agents - No External AI Models</p>", unsafe_allow_html=True)
     
     # Initialize logger
@@ -1951,15 +2054,15 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.header("⚙️ Control Panel")
+        st.markdown("<h2>" + IconSystem.icon('settings', 'medium') + " Control Panel</h2>", unsafe_allow_html=True)
         
         analysis_mode = st.radio(
             "Select Analysis Mode:",
-            ["📊 Report Analysis", "📈 Stock Analysis"]
+            ["Report Analysis", "Stock Analysis"]
         )
         
         st.markdown("---")
-        st.markdown("### 🤖 Agent Status")
+        st.markdown("<h3>" + IconSystem.icon('robot', 'small') + " Agent Status</h3>", unsafe_allow_html=True)
         st.success("✅ Data Ingestion Agent: Active")
         st.success("✅ Self-Healing Agent: Active")
         st.success("✅ Field Generation Agent: Active")
@@ -1974,18 +2077,22 @@ def main():
             st.rerun()
     
     # Main content tabs
-    tab1, tab2, tab3 = st.tabs(["📊 Analysis", "📈 Visualizations", "🧠 Agent Logs"])
+    tab1, tab2, tab3 = st.tabs([
+        "📊 Analysis",
+        "📈 Visualizations",
+        "🧠 Agent Logs"
+    ])
     
     # ========================================================================
     # REPORT ANALYSIS MODE
     # ========================================================================
     
-    if analysis_mode == "📊 Report Analysis":
+    if analysis_mode == "Report Analysis":
         with tab1:
-            st.header("📊 Report Analysis")
+            st.markdown("<h2>" + IconSystem.icon('chart', 'medium') + " Report Analysis</h2>", unsafe_allow_html=True)
             
             # File upload
-            st.subheader("1️⃣ Upload Your Data")
+            st.markdown("<h3>" + IconSystem.icon('upload', 'small') + " 1. Upload Your Data</h3>", unsafe_allow_html=True)
             uploaded_file = st.file_uploader(
                 "Upload CSV or Excel file",
                 type=['csv', 'xlsx', 'xls'],
@@ -2002,7 +2109,7 @@ def main():
                 iris = load_iris()
                 df = pd.DataFrame(iris.data, columns=iris.feature_names)
                 df['species'] = iris.target
-                st.success("✅ Loaded sample Iris dataset")
+                st.success(f"✅ Loaded sample Iris dataset")
             elif uploaded_file:
                 # Initialize agents
                 ingestion_agent = DataIngestionAgent(logger)
@@ -2014,7 +2121,7 @@ def main():
                     st.success(f"✅ Found {len(data)} sheets: {list(data.keys())}")
                     
                     # Sheet selection UI
-                    st.subheader("📄 Multi-Sheet Selection")
+                    st.markdown("<h3>" + IconSystem.icon('table', 'small') + " Multi-Sheet Selection</h3>", unsafe_allow_html=True)
                     
                     col1, col2 = st.columns([2, 1])
                     with col1:
@@ -2051,7 +2158,7 @@ def main():
                     st.dataframe(df.head(10))
                 
                 st.markdown("---")
-                st.subheader("2️⃣ Select Variables to Analyze")
+                st.markdown("<h3>" + IconSystem.icon('chart', 'small') + " 2. Select Variables to Analyze</h3>", unsafe_allow_html=True)
                 
                 all_columns = list(df.columns)
                 # Filter out system columns
@@ -2065,7 +2172,7 @@ def main():
                 
                 # Field Generation Section
                 st.markdown("---")
-                st.subheader("🔧 Generate New Fields (Optional)")
+                st.markdown("<h3>" + IconSystem.icon('magic', 'small') + " Generate New Fields (Optional)</h3>", unsafe_allow_html=True)
                 
                 with st.expander("✨ Auto-Generate Derived Fields"):
                     st.markdown("**The Field Generation Agent can create new variables from existing data:**")
@@ -2215,7 +2322,7 @@ def main():
                 # Display results if available
                 if 'hypotheses' in st.session_state:
                     st.markdown("---")
-                    st.subheader("🔍 Data Quality Report")
+                    st.markdown("<h3>" + IconSystem.icon('search', 'small') + " Data Quality Report</h3>", unsafe_allow_html=True)
                     
                     col1, col2 = st.columns(2)
                     
@@ -2450,9 +2557,9 @@ def main():
      # STOCK ANALYSIS MODE
     # ========================================================================
     
-    elif analysis_mode == "📈 Stock Analysis":
+    elif analysis_mode == "Stock Analysis":
         with tab1:
-            st.header("📈 Stock Analysis")
+            st.markdown("<h2>" + IconSystem.icon('stock', 'medium') + " Stock Analysis</h2>", unsafe_allow_html=True)
             
             col1, col2 = st.columns(2)
             
@@ -2540,7 +2647,7 @@ def main():
             # Display results
             if 'stock_analysis' in st.session_state:
                 st.markdown("---")
-                st.subheader(f"📊 Dynamic Stock Dashboard: {st.session_state['stock_symbol']}")
+                st.markdown("<h3>" + IconSystem.icon('chart', 'small') + " Dynamic Stock Dashboard: " + st.session_state['stock_symbol'] + "</h3>", unsafe_allow_html=True)
                 
                 df_stock = st.session_state['stock_data']
                 
@@ -2644,7 +2751,7 @@ def main():
     # ========================================================================
     
     with tab2:
-        st.header("📈 Autonomous Visualizations")
+        st.markdown("<h2>" + IconSystem.icon('chart-line', 'medium') + " Autonomous Visualizations</h2>", unsafe_allow_html=True)
         
         if 'visualizations' in st.session_state:
             visualizations = st.session_state['visualizations']
@@ -2786,7 +2893,7 @@ def main():
     # ========================================================================
     
     with tab3:
-        st.header("🧠 Agent Thinking Logs")
+        st.markdown("<h2>" + IconSystem.icon('brain', 'medium') + " Agent Thinking Logs</h2>", unsafe_allow_html=True)
         st.caption("Real-time transparency into agent reasoning and decision-making")
         
         logs = logger.get_logs()
