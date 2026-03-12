@@ -2235,26 +2235,22 @@ def main():
         initial_sidebar_state="expanded",
     )
     
-    # --- MODERN SLEEK UI INJECTION ---
-    # Top-tier Designer UI: Glassmorphism, Google Fonts, Font Awesome Icons, and Vibrant Dark-Mode 
+    # --- ORIGINAL COLOR THEME INJECTION ---
+    # Restored original dark gradient and accent palette
     st.markdown("""
         <!-- Font Awesome Icons -->
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         
         <style>
-        /* Import Segoe UI or fallback */
-        @import url('https://fonts.googleapis.com/css2?family=Segoe+UI&display=swap');
-
-        /* Global App Background - Power BI Light Gray Canvas */
+        /* Original app background */
         .stApp {
-            background-color: #f3f2f1;
+            background: linear-gradient(135deg, #0e1117 0%, #161b22 100%);
             font-family: 'Segoe UI', 'Open Sans', 'Inter', sans-serif;
-            color: #252423;
         }
 
-        /* Titles and Headers */
+        /* Text styling */
         h1, h2, h3, p, span, div {
-            color: #252423;
+            color: #e5e7eb;
         }
         
         h1, h2, h3 {
@@ -2262,125 +2258,128 @@ def main():
         }
         
         .stMarkdown h1 {
-            color: #118DFF;
+            color: #3b82f6;
             font-size: 2.2rem;
             margin-bottom: -1rem;
         }
 
-        /* Sleek Sidebar - Power BI Service Style */
+        /* Sidebar */
         [data-testid="stSidebar"] {
-            background-color: #ffffff !important;
-            border-right: 1px solid #edebe9;
+            background: rgba(22, 27, 34, 0.7);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        /* Premium Buttons */
+        /* Buttons */
         .stButton > button {
-            background-color: #118dff;
+            border-radius: 8px;
+            background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%);
+            border: none;
             color: white;
             font-weight: 600;
-            border-radius: 2px;
-            border: none;
-            padding: 0.5rem 1rem;
-            transition: all 0.2s;
+            transition: all 0.3s ease;
         }
         
         .stButton > button:hover {
-            background-color: #0c6abf;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
         }
 
-        /* Inputs & Select Boxes */
+        /* Inputs */
         .stTextInput input, .stSelectbox > div > div {
-            background-color: #ffffff !important;
-            border-radius: 2px !important;
-            border: 1px solid #605e5c !important;
-            color: #323130 !important;
+            border-radius: 6px !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            background: rgba(255,255,255,0.05) !important;
+            color: #e5e7eb !important;
         }
         
         .stTextInput input:focus, .stSelectbox > div > div:focus {
-            border-color: #118dff !important;
-            box-shadow: 0 0 0 1px #118dff !important;
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.4) !important;
         }
 
-        /* Power BI KPI Cards */
+        /* Metric cards */
         [data-testid="stMetric"] {
-            background-color: #ffffff;
-            border: 1px solid #edebe9;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
             padding: 15px;
             border-radius: 4px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
             text-align: center;
         }
 
         [data-testid="stMetricValue"] {
             font-size: 1.8rem !important;
-            font-weight: 600 !important;
-            color: #323130;
+            font-weight: 700 !important;
+            background: -webkit-linear-gradient(45deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
         
         [data-testid="stMetricLabel"] {
-            color: #605e5c;
+            color: #cbd5e1;
             font-size: 0.9rem;
             font-weight: 600;
         }
 
-        /* Expanders and Containers - PBI Visual containers */
+        /* Expanders */
         .streamlit-expanderHeader {
-            background-color: #ffffff !important;
+            background-color: rgba(255,255,255,0.04) !important;
             border-radius: 4px 4px 0 0 !important;
-            border: 1px solid #edebe9 !important;
+            border: 1px solid rgba(255,255,255,0.08) !important;
             border-bottom: none !important;
-            color: #252423 !important;
+            color: #e5e7eb !important;
             font-weight: 600;
         }
         
         .streamlit-expanderContent {
-            background-color: #ffffff;
-            border: 1px solid #edebe9;
+            background-color: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
             border-top: none;
             border-radius: 0 0 4px 4px;
-            color: #252423;
+            color: #e5e7eb;
         }
         
-        /* Tabs styling */
+        /* Tabs */
         .stTabs [data-baseweb="tab-list"] {
             gap: 0px;
-            background-color: #ffffff;
-            border-bottom: 2px solid #edebe9;
+            background-color: rgba(255,255,255,0.02);
+            border-bottom: 2px solid rgba(255,255,255,0.08);
             padding: 0 1rem;
         }
         
         .stTabs [data-baseweb="tab"] {
             background-color: transparent;
             border: none;
-            color: #605e5c;
+            color: #cbd5e1;
             padding: 10px 16px;
             font-weight: 600;
         }
         
         .stTabs [aria-selected="true"] {
             background-color: transparent;
-            border-bottom: 3px solid #118dff;
-            color: #118dff;
+            border-bottom: 3px solid #3b82f6;
+            color: #3b82f6;
         }
 
-        /* Toast / Notifications */
+        /* Alerts */
         .stAlert {
-            background-color: #ffffff !important;
-            border: 1px solid #edebe9 !important;
-            border-left: 4px solid #118dff !important;
-            color: #323130;
+            background-color: rgba(255,255,255,0.05) !important;
+            border: 1px solid rgba(255,255,255,0.08) !important;
+            border-left: 4px solid #3b82f6 !important;
+            color: #e5e7eb;
         }
         
         /* Font Awesome Icons Styling */
-        .icon-large { font-size: 1.5rem; margin-right: 0.5rem; color: #118dff; }
-        .icon-medium { font-size: 1.2rem; margin-right: 0.4rem; color: #118dff; }
-        .icon-small { font-size: 0.9rem; margin-right: 0.3rem; color: #118dff; }
+        .icon-large { font-size: 1.8rem; margin-right: 0.7rem; color: #3b82f6; }
+        .icon-medium { font-size: 1.3rem; margin-right: 0.5rem; color: #60a5fa; }
+        .icon-small { font-size: 1rem; margin-right: 0.4rem; color: #93c5fd; }
         
         /* Icon colors by category */
-        .icon-success { color: #107c10; } /* PBI Green */
-        .icon-warning { color: #d83b01; } /* PBI Orange */
-        .icon-error { color: #a4262c; }   /* PBI Red */
-        .icon-info { color: #0078d4; }    /* PBI Blue */
+        .icon-success { color: #10b981 !important; }
+        .icon-warning { color: #f59e0b !important; }
+        .icon-error { color: #ef4444 !important; }
+        .icon-info { color: #3b82f6 !important; }
         </style>
     """, unsafe_allow_html=True)
     # -------------------------------
