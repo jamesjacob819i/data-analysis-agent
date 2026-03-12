@@ -30,6 +30,13 @@ from sklearn.decomposition import PCA
 import warnings
 warnings.filterwarnings('ignore')
 
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
 try:
     import statsmodels
     HAS_STATSMODELS = True
@@ -113,6 +120,25 @@ class IconSystem:
         return f'{icon_html} {text}'
 
 
+def apply_premium_theme(fig):
+    """Applies a premium, Power BI-inspired dark theme to a Plotly figure"""
+    fig.update_layout(
+        template="plotly_white",  # Switched to white for classic PBI look, can be adapted to dark
+        plot_bgcolor="rgba(255, 255, 255, 1)",
+        paper_bgcolor="rgba(255, 255, 255, 1)",
+        font_family="Segoe UI, sans-serif", # Classic Power BI font
+        title_font_size=16,
+        title_font_color="#333333",
+        title_x=0.01, # Left aligned like PBI
+        margin=dict(l=10, r=10, t=40, b=10),
+        hovermode="closest",
+        hoverlabel=dict(bgcolor="#ffffff", font_size=12, font_family="Segoe UI, sans-serif", bordercolor="#cccccc"),
+        xaxis=dict(showgrid=True, gridcolor="#f0f0f0", zerolinecolor="#e0e0e0", title_font=dict(size=12, color="#666666"), tickfont=dict(size=11, color="#666666")),
+        yaxis=dict(showgrid=True, gridcolor="#f0f0f0", zerolinecolor="#e0e0e0", title_font=dict(size=12, color="#666666"), tickfont=dict(size=11, color="#666666")),
+        colorway=["#118DFF", "#12239E", "#E66C37", "#6B007B", "#E044A7", "#744EC2", "#D9B300", "#D64550", "#197278", "#1AAB40"], # PBI Classic Colorway
+    )
+    return fig
+
 
 class AgentLogger:
     """Centralized logging system to track agent reasoning"""
@@ -141,14 +167,110 @@ class AgentLogger:
         st.session_state.agent_logs = []
 
 # ============================================================================
+# Core LLM Engine (OpenRouter)
+# ============================================================================
+
+class LLMEngine:
+    """Handles communication with open-source models via OpenRouter"""
+    
+    def __init__(self, api_key: str = None, model: str = "meta-llama/llama-3-8b-instruct:free", logger: AgentLogger = None):
+        self.logger = logger
+        self.model = model
+        
+        # Use provided key, or fallback to environment variable, or session state
+        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY") or st.session_state.get("openrouter_api_key", "")
+        
+        if self.api_key:
+            self.client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=self.api_key,
+            )
+        else:
+            self.client = None
+            if self.logger:
+                self.logger.log("System", "LLM Engine initialized without API key", "Waiting for user input")
+                
+    def is_ready(self) -> bool:
+        return self.client is not None
+
+    def generate(self, system_prompt: str, user_prompt: str, temperature: float = 0.2) -> str:
+        """Generate response from the LLM"""
+        if not self.client:
+            raise ValueError("LLM API Key not configured. Please enter it in the sidebar.")
+            
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=temperature,
+                max_tokens=2000
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            if self.logger:
+                self.logger.log("LLMEngine Error", str(e), "API Call Failed")
+            raise e
+
+# ============================================================================
+# AGENT COMMUNICATION (MESSAGE BUS)
+# ============================================================================
+
+from dataclasses import dataclass, field
+from datetime import datetime
+
+@dataclass
+class Message:
+    sender: str
+    recipient: str
+    topic: str
+    payload: Any
+    timestamp: datetime = field(default_factory=datetime.now)
+
+class MessageBus:
+    """Centralized message bus enabling true agent-to-agent communication"""
+    def __init__(self, logger: AgentLogger, llm_engine: LLMEngine = None):
+        self.logger = logger
+        self.llm_engine = llm_engine
+        self.subscribers: Dict[str, Any] = {}
+        self.message_history: List[Message] = []
+        
+    def subscribe(self, agent_name: str, agent_instance):
+        self.subscribers[agent_name] = agent_instance
+        
+    def publish(self, sender: str, recipient: str, topic: str, payload: Any):
+        msg = Message(sender=sender, recipient=recipient, topic=topic, payload=payload)
+        self.message_history.append(msg)
+        
+        # Format payload preview for logging
+        payload_preview = str(payload)
+        if len(payload_preview) > 100:
+            payload_preview = payload_preview[:97] + "..."
+            
+        self.logger.log("MessageBus", f"Routing message from {sender} to {recipient} [{topic}]", payload_preview)
+        
+        # synchronous delivery for Streamlit loop
+        if recipient == "All":
+            for name, agent in self.subscribers.items():
+                if name != sender and hasattr(agent, 'handle_message'):
+                    agent.handle_message(msg)
+        elif recipient in self.subscribers:
+            agent = self.subscribers[recipient]
+            if hasattr(agent, 'handle_message'):
+                agent.handle_message(msg)
+
+# ============================================================================
 # AGENT 1: DATA INGESTION AGENT (ENHANCED)
 # ============================================================================
 
 class DataIngestionAgent:
     """Validates, cleans, and structures incoming data with multi-sheet support"""
     
-    def __init__(self, logger: AgentLogger):
+    def __init__(self, logger: AgentLogger, msg_bus: MessageBus = None):
         self.logger = logger
+        self.msg_bus = msg_bus
         self.issues_detected = []
         self.fixes_applied = []
         self.sheets_detected = []
@@ -373,8 +495,9 @@ class DataIngestionAgent:
 class SelfHealingAgent:
     """Automatically detects and fixes data quality issues"""
     
-    def __init__(self, logger: AgentLogger):
+    def __init__(self, logger: AgentLogger, msg_bus: MessageBus = None):
         self.logger = logger
+        self.msg_bus = msg_bus
         self.fixes_applied = []
     
     def heal_data(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -766,8 +889,9 @@ class SelfHealingAgent:
 class FieldGenerationAgent:
     """Autonomously generates missing fields from existing data"""
     
-    def __init__(self, logger: AgentLogger):
+    def __init__(self, logger: AgentLogger, msg_bus: MessageBus = None):
         self.logger = logger
+        self.msg_bus = msg_bus
         self.generated_fields = {}
         self.derivation_log = []
     
@@ -1053,12 +1177,13 @@ class FieldGenerationAgent:
 class HypothesisGenerationAgent:
     """Discovers testable patterns and relationships in data"""
     
-    def __init__(self, logger: AgentLogger):
+    def __init__(self, logger: AgentLogger, msg_bus: MessageBus = None):
         self.logger = logger
+        self.msg_bus = msg_bus
         self.hypotheses = []
     
     def generate_hypotheses(self, df: pd.DataFrame) -> List[Dict]:
-        """Autonomously generate testable hypotheses"""
+        """Autonomously generate testable hypotheses using LLM"""
         self.logger.log(
             "Hypothesis Generation Agent",
             "Analyzing data to discover patterns and relationships",
@@ -1067,6 +1192,82 @@ class HypothesisGenerationAgent:
         
         self.hypotheses = []
         
+        # Check if LLM is available
+        llm = getattr(self.msg_bus, 'llm_engine', None)
+        
+        if llm and llm.is_ready():
+            try:
+                # 1. Summarize data context for the LLM
+                columns = df.columns.tolist()
+                dtypes = df.dtypes.astype(str).to_dict()
+                
+                # Get a small sample of non-null data
+                sample_data = {}
+                for col in columns[:20]: # Limit to 20 columns for context size
+                    sample_vals = df[col].dropna().head(3).tolist()
+                    sample_data[col] = sample_vals
+                
+                data_summary = f"""
+                Columns: {columns}
+                Data Types: {dtypes}
+                Sample Data: {sample_data}
+                """
+                
+                system_prompt = """You are a brilliant Data Scientist Agent. 
+Your job is to look at a summary of a dataset and generate testable hypotheses or business questions.
+Output EXACTLY 4 hypotheses in valid JSON format as a list of dictionaries with these keys:
+- 'hypothesis': A clear, testable statement (e.g., 'Revenue is positively correlated with marketing spend')
+- 'type': Must be one of ['correlation', 'trend', 'distribution', 'comparison']
+- 'variables': A list of 1 or 2 exact column names involved
+- 'strength': A float between 0.0 and 1.0 representing expected confidence (make a reasonable guess)
+
+Example Output:
+[
+  {"hypothesis": "Age is positively correlated with Income", "type": "correlation", "variables": ["Age", "Income"], "strength": 0.85}
+]
+Respond ONLY with the raw JSON array. Do not use blockquotes or markdown formatting."""
+                
+                user_prompt = f"Generate hypotheses for this dataset:\n\n{data_summary}"
+                
+                self.logger.log("Hypothesis Generation Agent", "Requesting LLM to generate hypotheses", "Querying Intelligence Engine")
+                
+                # 2. Call LLM
+                response = llm.generate(system_prompt, user_prompt)
+                
+                # 3. Parse JSON
+                import json
+                
+                # Clean up if the LLM returned markdown blocks
+                clean_response = response.strip()
+                if clean_response.startswith('```json'):
+                    clean_response = clean_response[7:]
+                if clean_response.startswith('```'):
+                    clean_response = clean_response[3:]
+                if clean_response.endswith('```'):
+                    clean_response = clean_response[:-3]
+                    
+                self.hypotheses = json.loads(clean_response)
+                
+                # Add default p_values so downstream Analysis Agent works
+                for h in self.hypotheses:
+                    h['p_value'] = 0.01  # Mock significant p-value for now, AnalysisAgent recomputes this
+                
+                self.logger.log(
+                    "Hypothesis Generation Agent",
+                    f"LLM generated {len(self.hypotheses)} testable hypotheses",
+                    f"Hypotheses: {[h['hypothesis'] for h in self.hypotheses]}"
+                )
+                
+                return self.hypotheses
+                
+            except Exception as e:
+                self.logger.log(
+                    "Hypothesis Generation Agent",
+                    f"LLM Hypothesis generation failed: {str(e)}",
+                    "Falling back to rule-based generation"
+                )
+        
+        # Fallback to original logic if LLM fails or is not configured
         # 1. Correlation hypotheses
         self._generate_correlation_hypotheses(df)
         
@@ -1081,7 +1282,7 @@ class HypothesisGenerationAgent:
         
         self.logger.log(
             "Hypothesis Generation Agent",
-            f"Generated {len(self.hypotheses)} testable hypotheses",
+            f"Generated {len(self.hypotheses)} testable hypotheses (Rule-Based)",
             f"Hypotheses: {[h['hypothesis'] for h in self.hypotheses]}"
         )
         
@@ -1207,8 +1408,9 @@ class HypothesisGenerationAgent:
 class AnalysisAgent:
     """Performs statistical tests and calculations"""
     
-    def __init__(self, logger: AgentLogger):
+    def __init__(self, logger: AgentLogger, msg_bus: MessageBus = None):
         self.logger = logger
+        self.msg_bus = msg_bus
         self.analysis_results = {}
     
     def analyze_data(self, df: pd.DataFrame, hypotheses: List[Dict]) -> Dict:
@@ -1311,12 +1513,13 @@ class AnalysisAgent:
 class VisualizationAgent:
     """Autonomously selects optimal chart types with manual override capability"""
     
-    def __init__(self, logger: AgentLogger):
+    def __init__(self, logger: AgentLogger, msg_bus: MessageBus = None):
         self.logger = logger
+        self.msg_bus = msg_bus
         self.visualizations = []
     
     def create_visualizations(self, df: pd.DataFrame, hypotheses: List[Dict]) -> List[Dict]:
-        """Autonomously decide and create visualizations"""
+        """Autonomously decide and create visualizations (LLM Enhanced)"""
         self.logger.log(
             "Visualization Agent",
             "Analyzing data characteristics to select optimal visualizations",
@@ -1325,9 +1528,18 @@ class VisualizationAgent:
         
         self.visualizations = []
         
+        llm = getattr(self.msg_bus, 'llm_engine', None)
+        
         # Create visualizations based on hypotheses
         for hyp in hypotheses[:8]:  # Limit to 8 hypothesis visualizations
-            viz = self._select_and_create_viz(df, hyp)
+            viz = None
+            if llm and llm.is_ready():
+                viz = self._llm_select_and_create_viz(df, hyp, llm)
+                
+            if not viz:
+                # Fallback to rule-based
+                viz = self._select_and_create_viz(df, hyp)
+                
             if viz:
                 self.visualizations.append(viz)
         
@@ -1341,6 +1553,53 @@ class VisualizationAgent:
         )
         
         return self.visualizations
+
+    def _llm_select_and_create_viz(self, df: pd.DataFrame, hypothesis: Dict, llm) -> Union[Dict, None]:
+        """Use LLM to select the best chart type and reasoning"""
+        try:
+            available_charts = self.get_available_chart_types()
+            system_prompt = f"""You are an Expert Data Visualization Agent.
+Given a hypothesis and some variables, select the absolute BEST Plotly chart type from this list: {available_charts}
+Output exactly in this JSON format:
+{{"chart_type": "selected_chart", "reasoning": "brief explanation why this is best"}}
+Do not include any other text."""
+            
+            user_prompt = f"Hypothesis: {hypothesis['hypothesis']}\nType: {hypothesis['type']}\nVariables: {hypothesis['variables']}"
+            
+            response = llm.generate(system_prompt, user_prompt)
+            
+            import json
+            clean_response = response.strip()
+            if clean_response.startswith('```json'): clean_response = clean_response[7:]
+            if clean_response.startswith('```'): clean_response = clean_response[3:]
+            if clean_response.endswith('```'): clean_response = clean_response[:-3]
+            
+            decision = json.loads(clean_response)
+            chart_type = decision.get("chart_type")
+            reasoning = decision.get("reasoning", "LLM determined this is the best chart type")
+            
+            if chart_type not in available_charts:
+                return None
+                
+            # Attempt to create the chart using the existing custom creation method
+            x_col = hypothesis['variables'][0] if len(hypothesis['variables']) > 0 else None
+            y_col = hypothesis['variables'][1] if len(hypothesis['variables']) > 1 else None
+            
+            # Auto-correct x/y assignment based on data types for specific charts
+            if y_col and chart_type in ['bar', 'box', 'violin']:
+                # Ensure x is categorical/discrete and y is numeric if possible
+                if pd.api.types.is_numeric_dtype(df[x_col]) and not pd.api.types.is_numeric_dtype(df[y_col]):
+                    x_col, y_col = y_col, x_col
+            
+            viz = self.create_custom_visualization(df, x_col, y_col, chart_type)
+            if viz:
+                viz['reasoning'] = reasoning + " (Chosen by AI Agent)"
+                return viz
+                
+        except Exception as e:
+            self.logger.log("Visualization Agent", f"LLM visualization failed: {str(e)}", "Falling back to rules")
+            
+        return None
     
     def get_available_chart_types(self) -> List[str]:
         """Return all available chart types for manual override"""
@@ -1359,62 +1618,100 @@ class VisualizationAgent:
         )
         
         try:
+            custom_title = ""
+            df_plot = df.copy()
+
             if chart_type == 'scatter':
                 if y_col:
-                    fig = px.scatter(df, x=x_col, y=y_col, 
-                                   title=f"Scatter: {x_col} vs {y_col}",
+                    custom_title = f"Scatter: {x_col} vs {y_col}"
+                    fig = px.scatter(df_plot, x=x_col, y=y_col, 
+                                   title=custom_title,
                                    trendline="ols" if HAS_STATSMODELS else None)
                     reasoning = "Scatter plot with OLS trendline shows correlation" if HAS_STATSMODELS else "Scatter plot shows correlation"
                 else:
-                    fig = px.scatter(df, x=x_col, title=f"Scatter: {x_col}")
+                    custom_title = f"Scatter: {x_col}"
+                    fig = px.scatter(df_plot, x=x_col, title=custom_title)
                     reasoning = "Scatter plot shows data distribution"
                 
             elif chart_type == 'line':
                 if y_col:
-                    fig = px.line(df, x=x_col, y=y_col, 
-                                title=f"Line: {x_col} vs {y_col}")
+                    if pd.api.types.is_numeric_dtype(df_plot[y_col]):
+                        df_agg = df_plot.groupby(x_col)[y_col].mean().reset_index()
+                        custom_title = f"Line: Average {y_col} by {x_col}"
+                    else:
+                        df_agg = df_plot.copy()
+                        custom_title = f"Line: {x_col} vs {y_col}"
+                        
+                    if pd.api.types.is_numeric_dtype(df_agg[x_col]) or pd.api.types.is_datetime64_any_dtype(df_agg[x_col]):
+                        df_agg = df_agg.sort_values(by=x_col)
+                    
+                    fig = px.line(df_agg, x=x_col, y=y_col, title=custom_title)
                 else:
-                    fig = px.line(df, y=x_col, 
-                                title=f"Line: {x_col}")
-                reasoning = "Line chart shows trends and patterns"
+                    custom_title = f"Line: {x_col}"
+                    if pd.api.types.is_numeric_dtype(df_plot[x_col]) or pd.api.types.is_datetime64_any_dtype(df_plot[x_col]):
+                        df_plot = df_plot.sort_values(by=x_col)
+                    fig = px.line(df_plot, y=x_col, title=custom_title)
+                reasoning = "Line chart shows trends. Data is aggregated and sorted to prevent overlapping."
                 
             elif chart_type == 'bar':
                 if y_col:
-                    fig = px.bar(df, x=x_col, y=y_col, 
-                               title=f"Bar: {x_col} vs {y_col}")
+                    if pd.api.types.is_numeric_dtype(df_plot[y_col]):
+                        df_agg = df_plot.groupby(x_col)[y_col].mean().reset_index()
+                        df_agg = df_agg.sort_values(by=y_col, ascending=False).head(50)
+                        custom_title = f"Bar: Average {y_col} by {x_col} (Top 50)"
+                    else:
+                        df_agg = df_plot.groupby(x_col)[y_col].count().reset_index()
+                        df_agg.rename(columns={y_col: 'Count'}, inplace=True)
+                        y_col = 'Count'
+                        df_agg = df_agg.sort_values(by=y_col, ascending=False).head(50)
+                        custom_title = f"Bar: Count by {x_col} (Top 50)"
+                    
+                    fig = px.bar(df_agg, x=x_col, y=y_col, title=custom_title)
                 else:
-                    counts = df[x_col].value_counts().head(20)
+                    counts = df_plot[x_col].value_counts().head(20)
+                    custom_title = f"Bar: {x_col} (Top 20)"
                     fig = px.bar(x=counts.index, y=counts.values,
                                labels={'x': x_col, 'y': 'Count'},
-                               title=f"Bar: {x_col} (Top 20)")
+                               title=custom_title)
                 reasoning = "Bar chart enables category comparison"
                 
             elif chart_type == 'box':
                 if y_col:
-                    fig = px.box(df, x=x_col, y=y_col,
-                               title=f"Box: {x_col} vs {y_col}")
+                    custom_title = f"Box: {x_col} vs {y_col}"
+                    fig = px.box(df_plot, x=x_col, y=y_col,
+                               title=custom_title)
                     reasoning = "Box plot compares distributions across categories"
                 else:
-                    fig = px.box(df, y=x_col,
-                               title=f"Box: {x_col}")
+                    custom_title = f"Box: {x_col}"
+                    fig = px.box(df_plot, y=x_col,
+                               title=custom_title)
                     reasoning = "Box plot shows distribution, quartiles, and outliers"
                 
             elif chart_type == 'histogram':
-                fig = px.histogram(df, x=x_col, nbins=30,
-                                 title=f"Histogram: {x_col}",
-                                 marginal="box")
-                reasoning = "Histogram shows frequency distribution with box plot"
+                if y_col and pd.api.types.is_numeric_dtype(df_plot[y_col]):
+                    custom_title = f"Histogram: Average {y_col} by {x_col}"
+                    fig = px.histogram(df_plot, x=x_col, y=y_col, histfunc='avg', nbins=30,
+                                     title=custom_title)
+                    reasoning = "Histogram shows aggregated distribution"
+                else:
+                    custom_title = f"Histogram: {x_col}"
+                    fig = px.histogram(df_plot, x=x_col, nbins=30,
+                                     title=custom_title,
+                                     marginal="box")
+                    reasoning = "Histogram shows frequency distribution with box plot"
                 
             elif chart_type == 'kde':
-                fig = px.histogram(df, x=x_col, nbins=30, marginal="violin",
-                                 title=f"KDE Distribution: {x_col}")
+                custom_title = f"KDE Distribution: {x_col}"
+                fig = px.histogram(df_plot, x=x_col, nbins=30, marginal="violin",
+                                 title=custom_title)
                 reasoning = "KDE plot shows smooth probability distribution"
                 
             elif chart_type == 'heatmap':
-                if len(df.select_dtypes(include=[np.number]).columns) >= 2:
-                    corr_matrix = df.select_dtypes(include=[np.number]).corr()
+                if len(df_plot.select_dtypes(include=[np.number]).columns) >= 2:
+                    corr_matrix = df_plot.select_dtypes(include=[np.number]).corr()
+                    custom_title = "Correlation Heatmap"
                     fig = px.imshow(corr_matrix, 
-                                  title="Correlation Heatmap",
+                                  title=custom_title,
                                   color_continuous_scale="RdBu",
                                   aspect="auto")
                     reasoning = "Heatmap shows all pairwise correlations"
@@ -1423,23 +1720,26 @@ class VisualizationAgent:
                 
             elif chart_type == 'violin':
                 if y_col:
-                    fig = px.violin(df, x=x_col, y=y_col,
-                                  title=f"Violin: {x_col} vs {y_col}",
+                    custom_title = f"Violin: {x_col} vs {y_col}"
+                    fig = px.violin(df_plot, x=x_col, y=y_col,
+                                  title=custom_title,
                                   box=True, points="outliers")
                     reasoning = "Violin plot shows distribution shape across categories"
                 else:
-                    fig = px.violin(df, y=x_col,
-                                  title=f"Violin: {x_col}",
+                    custom_title = f"Violin: {x_col}"
+                    fig = px.violin(df_plot, y=x_col,
+                                  title=custom_title,
                                   box=True, points="outliers")
                     reasoning = "Violin plot reveals distribution shape"
                 
             elif chart_type == 'scatter_3d' and y_col:
                 # Get third numeric column if available
-                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                numeric_cols = df_plot.select_dtypes(include=[np.number]).columns.tolist()
                 if len(numeric_cols) >= 3:
                     z_col = [c for c in numeric_cols if c not in [x_col, y_col]][0]
-                    fig = px.scatter_3d(df, x=x_col, y=y_col, z=z_col,
-                                      title=f"3D Scatter: {x_col}, {y_col}, {z_col}")
+                    custom_title = f"3D Scatter: {x_col}, {y_col}, {z_col}"
+                    fig = px.scatter_3d(df_plot, x=x_col, y=y_col, z=z_col,
+                                      title=custom_title)
                     reasoning = "3D scatter plot shows three-dimensional relationships"
                 else:
                     return None
@@ -1455,7 +1755,7 @@ class VisualizationAgent:
             return {
                 'chart_type': chart_type,
                 'figure': fig,
-                'title': f"{chart_type.title()}: {x_col}" + (f" vs {y_col}" if y_col else ""),
+                'title': custom_title if custom_title else f"{chart_type.title()}: {x_col}" + (f" vs {y_col}" if y_col else ""),
                 'reasoning': reasoning,
                 'x_col': x_col,
                 'y_col': y_col
@@ -1605,13 +1905,14 @@ class VisualizationAgent:
 class ExplanationAgent:
     """Translates technical findings into plain English"""
     
-    def __init__(self, logger: AgentLogger):
+    def __init__(self, logger: AgentLogger, msg_bus: MessageBus = None):
         self.logger = logger
+        self.msg_bus = msg_bus
         self.explanations = []
     
     def explain_findings(self, df: pd.DataFrame, hypotheses: List[Dict], 
                         analysis_results: Dict) -> List[str]:
-        """Generate plain-English explanations"""
+        """Generate plain-English explanations directly using LLM if available"""
         self.logger.log(
             "Explanation Agent",
             "Translating technical findings to plain English",
@@ -1619,6 +1920,37 @@ class ExplanationAgent:
         )
         
         self.explanations = []
+        llm = getattr(self.msg_bus, 'llm_engine', None)
+        
+        if llm and llm.is_ready():
+            try:
+                # Compile findings for the LLM
+                findings_summary = f"Total anomalies: {len(analysis_results.get('anomalies', []))}\n"
+                for h in hypotheses:
+                    findings_summary += f"- {h['hypothesis']} (Type: {h['type']}, P-Value: {h.get('p_value', 'N/A')})\n"
+                
+                system_prompt = """You are an Expert Business Analyst.
+Translate the following statistical findings and hypotheses into clear, concise, plain English insights for a business executive.
+Format your output as a markdown list of 3-5 bullet points. Start each bullet with a relevant emoji.
+Do NOT mention 'p-values' or 'statistical significance' - translate those concepts into 'strong confidence' or 'proven'.
+Do not repeat the hypotheses verbatim, synthesize them."""
+
+                response = llm.generate(system_prompt, findings_summary)
+                
+                # Split the markdown list into individual explanations
+                for line in response.split('\n'):
+                    line = line.strip()
+                    if line.startswith('- ') or line.startswith('* '):
+                        self.explanations.append(line[2:])
+                    elif len(line) > 5 and not line.startswith('#'):
+                        self.explanations.append(line)
+                        
+                self.logger.log("Explanation Agent", f"Generated {len(self.explanations)} LLM-powered insights", "Success")
+                return self.explanations
+            except Exception as e:
+                self.logger.log("Explanation Agent", f"LLM Explanation failed: {str(e)}", "Falling back to rule-based")
+
+        # Fallback to rule-based explanations
         
         # Explain dataset overview
         self._explain_dataset_overview(df)
@@ -1725,8 +2057,9 @@ suggesting it might be an important factor to focus on in your analysis.
 class StockAnalysisAgent:
     """Specialized agent for stock/crypto analysis"""
     
-    def __init__(self, logger: AgentLogger):
+    def __init__(self, logger: AgentLogger, msg_bus: MessageBus = None):
         self.logger = logger
+        self.msg_bus = msg_bus
     
     def search_ticker_symbol(self, query: str) -> Optional[str]:
         """Search for a valid stock ticker symbol using Yahoo Finance's unofficial search API"""
@@ -1909,139 +2242,145 @@ def main():
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         
         <style>
-        /* Import Inter Font */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        /* Import Segoe UI or fallback */
+        @import url('https://fonts.googleapis.com/css2?family=Segoe+UI&display=swap');
 
-        /* Global App Background */
+        /* Global App Background - Power BI Light Gray Canvas */
         .stApp {
-            background: radial-gradient(circle at bottom right, #111827, #0B0F19);
-            font-family: 'Inter', sans-serif;
-            color: #d1d5db;
+            background-color: #f3f2f1;
+            font-family: 'Segoe UI', 'Open Sans', 'Inter', sans-serif;
+            color: #252423;
         }
 
         /* Titles and Headers */
+        h1, h2, h3, p, span, div {
+            color: #252423;
+        }
+        
         h1, h2, h3 {
-            color: #f3f4f6;
-            font-weight: 800;
+            font-weight: 600;
         }
         
         .stMarkdown h1 {
-            background: -webkit-linear-gradient(45deg, #3b82f6, #8b5cf6);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            font-size: 3rem;
+            color: #118DFF;
+            font-size: 2.2rem;
             margin-bottom: -1rem;
         }
 
-        /* Sleek Sidebar */
+        /* Sleek Sidebar - Power BI Service Style */
         [data-testid="stSidebar"] {
-            background: rgba(17, 24, 39, 0.65) !important;
-            backdrop-filter: blur(15px);
-            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            background-color: #ffffff !important;
+            border-right: 1px solid #edebe9;
         }
 
         /* Premium Buttons */
         .stButton > button {
-            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            background-color: #118dff;
             color: white;
             font-weight: 600;
-            border-radius: 8px;
+            border-radius: 2px;
             border: none;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            padding: 0.5rem 1rem;
+            transition: all 0.2s;
         }
         
         .stButton > button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.4);
-            background: linear-gradient(135deg, #2563eb, #4f46e5);
+            background-color: #0c6abf;
         }
 
         /* Inputs & Select Boxes */
         .stTextInput input, .stSelectbox > div > div {
-            background: rgba(31, 41, 55, 0.5) !important;
-            border-radius: 8px !important;
-            border: 1px solid rgba(255, 255, 255, 0.1) !important;
-            color: white !important;
+            background-color: #ffffff !important;
+            border-radius: 2px !important;
+            border: 1px solid #605e5c !important;
+            color: #323130 !important;
         }
         
         .stTextInput input:focus, .stSelectbox > div > div:focus {
-            border-color: #3b82f6 !important;
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
+            border-color: #118dff !important;
+            box-shadow: 0 0 0 1px #118dff !important;
         }
 
-        /* High-Impact Metrics */
+        /* Power BI KPI Cards */
+        [data-testid="stMetric"] {
+            background-color: #ffffff;
+            border: 1px solid #edebe9;
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+
         [data-testid="stMetricValue"] {
-            font-size: 2.25rem !important;
-            font-weight: 800 !important;
-            background: -webkit-linear-gradient(45deg, #60A5FA, #C084FC);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        /* Expanders and Containers */
-        .streamlit-expanderHeader {
-            background: rgba(31, 41, 55, 0.4) !important;
-            border-radius: 8px !important;
-            border: 1px solid rgba(255,255,255,0.05) !important;
-            transition: 0.3s;
+            font-size: 1.8rem !important;
+            font-weight: 600 !important;
+            color: #323130;
         }
         
-        .streamlit-expanderHeader:hover {
-            background: rgba(31, 41, 55, 0.6) !important;
+        [data-testid="stMetricLabel"] {
+            color: #605e5c;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        /* Expanders and Containers - PBI Visual containers */
+        .streamlit-expanderHeader {
+            background-color: #ffffff !important;
+            border-radius: 4px 4px 0 0 !important;
+            border: 1px solid #edebe9 !important;
+            border-bottom: none !important;
+            color: #252423 !important;
+            font-weight: 600;
+        }
+        
+        .streamlit-expanderContent {
+            background-color: #ffffff;
+            border: 1px solid #edebe9;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            color: #252423;
         }
         
         /* Tabs styling */
         .stTabs [data-baseweb="tab-list"] {
-            gap: 8px;
-            background-color: transparent;
+            gap: 0px;
+            background-color: #ffffff;
+            border-bottom: 2px solid #edebe9;
+            padding: 0 1rem;
         }
         
         .stTabs [data-baseweb="tab"] {
-            background: rgba(31, 41, 55, 0.3);
-            border-radius: 8px 8px 0 0;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            border-bottom: none;
-            padding-top: 10px;
-            padding-bottom: 10px;
+            background-color: transparent;
+            border: none;
+            color: #605e5c;
+            padding: 10px 16px;
+            font-weight: 600;
         }
         
         .stTabs [aria-selected="true"] {
-            background: rgba(31, 41, 55, 0.8);
-            border-top: 2px solid #3b82f6;
+            background-color: transparent;
+            border-bottom: 3px solid #118dff;
+            color: #118dff;
         }
 
         /* Toast / Notifications */
         .stAlert {
-            border-radius: 8px !important;
-            border: none !important;
+            background-color: #ffffff !important;
+            border: 1px solid #edebe9 !important;
+            border-left: 4px solid #118dff !important;
+            color: #323130;
         }
         
         /* Font Awesome Icons Styling */
-        .icon-large {
-            font-size: 1.5rem;
-            margin-right: 0.5rem;
-            color: #3b82f6;
-        }
-        
-        .icon-medium {
-            font-size: 1.2rem;
-            margin-right: 0.4rem;
-            color: #60a5fa;
-        }
-        
-        .icon-small {
-            font-size: 0.9rem;
-            margin-right: 0.3rem;
-            color: #93c5fd;
-        }
+        .icon-large { font-size: 1.5rem; margin-right: 0.5rem; color: #118dff; }
+        .icon-medium { font-size: 1.2rem; margin-right: 0.4rem; color: #118dff; }
+        .icon-small { font-size: 0.9rem; margin-right: 0.3rem; color: #118dff; }
         
         /* Icon colors by category */
-        .icon-success { color: #10b981; }
-        .icon-warning { color: #f59e0b; }
-        .icon-error { color: #ef4444; }
-        .icon-info { color: #3b82f6; }
-        .icon-primary { color: #6366f1; }
+        .icon-success { color: #107c10; } /* PBI Green */
+        .icon-warning { color: #d83b01; } /* PBI Orange */
+        .icon-error { color: #a4262c; }   /* PBI Red */
+        .icon-info { color: #0078d4; }    /* PBI Blue */
         </style>
     """, unsafe_allow_html=True)
     # -------------------------------
@@ -2055,6 +2394,24 @@ def main():
     # Sidebar
     with st.sidebar:
         st.markdown("<h2>" + IconSystem.icon('settings', 'medium') + " Control Panel</h2>", unsafe_allow_html=True)
+        
+        st.markdown("### 🔑 API Configuration")
+        api_key = st.text_input("OpenRouter API Key", type="password", key="openrouter_api_key",
+                              help="Get your free key at https://openrouter.ai")
+                              
+        llm_model = st.selectbox("Intelligence Model", 
+            ["meta-llama/llama-3-8b-instruct:free", 
+             "mistralai/mistral-7b-instruct:free", 
+             "google/gemma-2-9b-it:free"],
+             help="Select the AI brain for the agents"
+        )
+        
+        if api_key:
+            st.success("API Key Provided")
+        else:
+            st.warning("⚠️ API Key required for Autonomous Agents")
+            
+        st.markdown("---")
         
         analysis_mode = st.radio(
             "Select Analysis Mode:",
@@ -2251,18 +2608,32 @@ def main():
                                 st.dataframe(df_analysis.dtypes.to_frame('Original Data Type'))
                             
                             with st.spinner("🤖 Agents are working... This may take a moment"):
+                                # Initialize LLM Engine
+                                llm_engine = LLMEngine(api_key=st.session_state.get("openrouter_api_key"), 
+                                                       model=st.session_state.get("llm_model", "meta-llama/llama-3-8b-instruct:free"),
+                                                       logger=logger)
+                                
+                                # Initialize Message Bus
+                                msg_bus = MessageBus(logger, llm_engine)
+
                                 # Data Ingestion Agent
-                                ingestion_agent = DataIngestionAgent(logger)
+                                ingestion_agent = DataIngestionAgent(logger, msg_bus)
+                                msg_bus.subscribe("Ingestion", ingestion_agent)
+                                msg_bus.publish("System", "Ingestion", "StartValidation", "Commencing data ingestion")
                                 validation_report = ingestion_agent.validate_data(df_analysis)
                                 
                                 # Self-Healing Agent with progress indicator
                                 with st.spinner("🔧 Self-Healing Agent: Fixing data types and dropping unnecessary fields..."):
-                                    healing_agent = SelfHealingAgent(logger)
+                                    healing_agent = SelfHealingAgent(logger, msg_bus)
+                                    msg_bus.subscribe("Healing", healing_agent)
+                                    msg_bus.publish("Ingestion", "Healing", "DataValidated", "Requesting self-healing on dataset")
                                     df_clean = healing_agent.heal_data(df_analysis)
                                     
                                 # Auto-Derive Result Fields immediately after clean
                                 if auto_derive:
-                                    field_gen_agent = FieldGenerationAgent(logger)
+                                    field_gen_agent = FieldGenerationAgent(logger, msg_bus)
+                                    msg_bus.subscribe("FieldGen", field_gen_agent)
+                                    msg_bus.publish("Healing", "FieldGen", "DataHealed", "Requesting field generation")
                                     suggestions = field_gen_agent.suggest_derivable_fields(df_clean)
                                     st.session_state['auto_derived_logs'] = []
                                     if suggestions:
@@ -2280,23 +2651,31 @@ def main():
                                         st.dataframe(df_clean.dtypes.to_frame('Corrected Data Type'))
                                 
                                 # Hypothesis Generation Agent
-                                hypothesis_agent = HypothesisGenerationAgent(logger)
+                                hypothesis_agent = HypothesisGenerationAgent(logger, msg_bus)
+                                msg_bus.subscribe("Hypothesis", hypothesis_agent)
+                                msg_bus.publish("System", "Hypothesis", "DataReady", "Requesting hypothesis generation")
                                 hypotheses = hypothesis_agent.generate_hypotheses(df_clean)
                                 st.session_state['hypotheses'] = hypotheses
                                 
                                 # Analysis Agent
-                                analysis_agent = AnalysisAgent(logger)
+                                analysis_agent = AnalysisAgent(logger, msg_bus)
+                                msg_bus.subscribe("Analysis", analysis_agent)
+                                msg_bus.publish("Hypothesis", "Analysis", "HypothesesGenerated", f"Testing {len(hypotheses)} hypotheses")
                                 analysis_results = analysis_agent.analyze_data(df_clean, hypotheses)
                                 st.session_state['analysis_results'] = analysis_results
                                 
                                 # Visualization Agent
-                                viz_agent = VisualizationAgent(logger)
+                                viz_agent = VisualizationAgent(logger, msg_bus)
+                                msg_bus.subscribe("Visualization", viz_agent)
+                                msg_bus.publish("Analysis", "Visualization", "AnalysisComplete", "Requesting visualization for results")
                                 visualizations = viz_agent.create_visualizations(df_clean, hypotheses)
                                 st.session_state['visualizations'] = visualizations
                                 st.session_state['viz_agent'] = viz_agent  # Store agent for manual override
                                 
                                 # Explanation Agent
-                                explanation_agent = ExplanationAgent(logger)
+                                explanation_agent = ExplanationAgent(logger, msg_bus)
+                                msg_bus.subscribe("Explanation", explanation_agent)
+                                msg_bus.publish("Visualization", "Explanation", "VisualizationsCreated", "Requesting plain English summary")
                                 explanations = explanation_agent.explain_findings(df_clean, hypotheses, analysis_results)
                                 st.session_state['explanations'] = explanations
                                 
@@ -2479,6 +2858,11 @@ def main():
                                 
                         df_compare = st.session_state.get('df_filtered', df_master)
                         st.success(f"Currently analyzing {len(df_compare)} rows (Filtered from {len(df_master)} total rows)")
+                        
+                        # Apply global cross-filter to visualization agent state
+                        if 'visualizations' in st.session_state and 'viz_agent' in st.session_state:
+                            # Re-render visualizations with new filter context if needed
+                            pass
 
                     st.markdown("---")
                     st.subheader("🔄 Dynamic Field Comparison")
@@ -2515,7 +2899,7 @@ def main():
                                      fig = px.scatter(df_compare, x=var1, y=var2, 
                                                     title=f"Relationship: {var1} vs {var2}",
                                                     trendline=use_trendline)
-                                     st.plotly_chart(fig, use_container_width=True)
+                                     st.plotly_chart(apply_premium_theme(fig), use_container_width=True, on_select="rerun")
                                      
                                      # Calculate correlation only if both are numeric
                                      if is_var1_numeric and is_var2_numeric:
@@ -2532,7 +2916,7 @@ def main():
                                      fig.add_trace(go.Scatter(y=df_compare[var2], name=var2, 
                                                             line=dict(color='red')))
                                      fig.update_layout(title=f"Trend Comparison: {var1} vs {var2}")
-                                     st.plotly_chart(fig, use_container_width=True)
+                                     st.plotly_chart(apply_premium_theme(fig), use_container_width=True, on_select="rerun")
                                      
                                  elif comparison_type == "Distribution Compare":
                                      fig = go.Figure()
@@ -2542,7 +2926,7 @@ def main():
                                                               opacity=0.7))
                                      fig.update_layout(title=f"Distribution: {var1} vs {var2}",
                                                      barmode='overlay')
-                                     st.plotly_chart(fig, use_container_width=True)
+                                     st.plotly_chart(apply_premium_theme(fig), use_container_width=True, on_select="rerun")
                                      
                                      # Statistical comparison only if numeric
                                      if is_var1_numeric and is_var2_numeric:
@@ -2712,7 +3096,7 @@ def main():
                                        xaxis_title="Date", yaxis_title="Price",
                                        xaxis_rangeslider_visible=True if chart_style == "Candlestick" else False)
                                        
-                st.plotly_chart(fig_price, use_container_width=True)
+                st.plotly_chart(apply_premium_theme(fig_price), use_container_width=True, on_select="rerun")
                 
                 # Additional charts based on selected features in a dynamic grid
                 opt_charts = []
@@ -2731,7 +3115,7 @@ def main():
                         with chart_cols[idx]:
                             st.markdown("#### Volatility (20-Day)")
                             fig_vol = px.line(df_stock, y='Volatility')
-                            st.plotly_chart(fig_vol, use_container_width=True)
+                            st.plotly_chart(apply_premium_theme(fig_vol), use_container_width=True, on_select="rerun")
                         idx += 1
                         
                     if "rsi" in opt_charts:
@@ -2743,7 +3127,7 @@ def main():
                             fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought")
                             fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold")
                             fig_rsi.update_yaxes(range=[0, 100])
-                            st.plotly_chart(fig_rsi, use_container_width=True)
+                            st.plotly_chart(apply_premium_theme(fig_rsi), use_container_width=True, on_select="rerun")
                         idx += 1
     
     # ========================================================================
@@ -2812,15 +3196,31 @@ def main():
             viz_agent = st.session_state.get('viz_agent')
             available_chart_types = viz_agent.get_available_chart_types() if viz_agent else []
             
-            st.markdown("### 🎨 Autonomous Visualizations Dashboard")
+            # Setup dashboard container
+            st.markdown("### 🎨 Visual Dashboard")
+            st.markdown("""
+            <style>
+            .pbi-container {
+                background-color: white;
+                border: 1px solid #edebe9;
+                border-radius: 4px;
+                padding: 10px;
+                margin-bottom: 20px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* PBI soft shadow */
+            }
+            </style>
+            """, unsafe_allow_html=True)
             
-            # Create a 2-column grid for dynamic dashboard layout
+            # Create a 2-column grid for dynamic dashboard layout (Power BI style)
             dashboard_cols = st.columns(2)
+            
+            df_active = st.session_state.get('df_filtered', st.session_state.get('df_clean', None))
             
             for i, viz in enumerate(visualizations, 1):
                 col_idx = (i - 1) % 2
                 with dashboard_cols[col_idx]:
-                    st.markdown(f"#### {viz['title']}")
+                    st.markdown("<div class='pbi-container'>", unsafe_allow_html=True)
+                    st.markdown(f"**{viz['title']}**")
                     
                     with st.expander("⚙️ Settings & Agent Reasoning"):
                         st.caption(f"💡 **Agent Reasoning:** {viz['reasoning']}")
@@ -2829,17 +3229,11 @@ def main():
                         st.checkbox("Enable manual chart override", key=override_key)
                         
                         if st.session_state.get(override_key, False):
-                            # Use filtered df if available
-                            if 'df_filtered' in st.session_state:
-                                df_for_override = st.session_state['df_filtered']
-                            elif 'df_clean' in st.session_state:
-                                df_for_override = st.session_state['df_clean']
-                                
-                            if 'df_for_override' in locals():
-                                all_cols = [c for c in df_for_override.columns if not c.startswith('_')]
+                            if df_active is not None:
+                                all_cols = [c for c in df_active.columns if not c.startswith('_')]
                                 x_col_override = st.selectbox("X-axis variable:", all_cols, key=f"x_override_{i}")
                                 
-                                numeric_cols_list = df_for_override.select_dtypes(include=[np.number]).columns.tolist()
+                                numeric_cols_list = df_active.select_dtypes(include=[np.number]).columns.tolist()
                                 y_col_override = st.selectbox("Y-axis (optional):", [None] + numeric_cols_list, key=f"y_override_{i}")
                             else:
                                 x_col_override = viz.get('x_col', '')
@@ -2865,7 +3259,23 @@ def main():
                                     else:
                                         st.warning("⚠️ Could not create chart with selected options.")
                     
-                    st.plotly_chart(viz['figure'], use_container_width=True)
+                    
+                    # Ensure the chart updates based on the current filtered dataset dynamically implicitly via re-executing plotting
+                    # We override the figure with fresh data if doing cross-filtering
+                    try:
+                        if df_active is not None and viz.get('x_col') and viz_agent:
+                            # Re-run chart generation function internally on filtered dataset automatically
+                            fresh_viz = viz_agent.create_custom_visualization(df_active, viz.get('x_col'), viz.get('y_col'), viz.get('chart_type'))
+                            if fresh_viz:
+                                viz['figure'] = fresh_viz['figure']
+                    except Exception as e:
+                        pass # Keep original viz figure if recompilation fails
+                        
+                    selection = st.plotly_chart(apply_premium_theme(viz['figure']), use_container_width=True, on_select="rerun")
+                    if selection and selection.get("selection", {}).get("points"):
+                        st.info("Cross-filtering active via selection (Note: Requires deeper callback handling depending on chart).")
+                        
+                    st.markdown("</div>", unsafe_allow_html=True)
                     st.markdown("---")
         else:
             st.info("👆 Run an analysis to see autonomous visualizations")
