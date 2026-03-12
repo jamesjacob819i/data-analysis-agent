@@ -1,0 +1,89 @@
+/* Inject modern Glassmorphism and modern colors */
+.stApp {
+    background: linear-gradient(135deg, #0e1117 0%, #161b22 100%);
+}
+
+.stButton > button {
+    border-radius: 8px;
+    background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%);
+    border: none;
+    color: white;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+.stTextInput > div > div > input {
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255,255,255,0.05);
+}
+
+div[data-testid="stSidebar"] {
+    background: rgba(22, 27, 34, 0.7);
+    backdrop-filter: blur(10px);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+div[data-testid="stMetricValue"] {
+    font-size: 2rem;
+    font-weight: 700;
+    background: -webkit-linear-gradient(45deg, #3b82f6, #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+/* Font Awesome Icons */
+.icon-large {
+    font-size: 1.8rem;
+    margin-right: 0.7rem;
+    color: #3b82f6;
+    vertical-align: middle;
+}
+
+.icon-medium {
+    font-size: 1.3rem;
+    margin-right: 0.5rem;
+    color: #60a5fa;
+    vertical-align: middle;
+}
+
+.icon-small {
+    font-size: 1rem;
+    margin-right: 0.4rem;
+    color: #93c5fd;
+    vertical-align: middle;
+}
+
+.icon-success {
+    color: #10b981 !important;
+}
+
+.icon-warning {
+    color: #f59e0b !important;
+}
+
+.icon-error {
+    color: #ef4444 !important;
+}
+
+.icon-info {
+    color: #3b82f6 !important;
+}
+
+.icon-primary {
+    color: #6366f1 !important;
+}
+
+/* Icon animation */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.fa-spin {
+    animation: spin 2s linear infinite;
+}
